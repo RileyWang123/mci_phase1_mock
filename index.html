@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manufacturing Process Editor</title>
+    <link rel="stylesheet" href="styles.css?v=20260607-remove-human-constraints" />
+    <link rel="stylesheet" href="design-polish.css?v=20260610" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">MP</div>
+          <div>
+            <div class="product-name">Assembly Process Editor</div>
+            <div class="project-name">XPS-14 Thermal Module Assembly · Rev B03</div>
+          </div>
+        </div>
+        <div class="run-state">
+          <span class="pulse"></span>
+          AI draft generated 18 min ago
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" title="Run validation">Validate</button>
+          <button class="icon-button" title="Regenerate affected rows">Regenerate</button>
+          <button class="primary-button">Export MI Package</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar">
+          <section class="sidebar-section">
+            <div class="section-label">Process Flow</div>
+            <button class="flow-item active" data-stage="inputs">
+              <span class="step-index">01</span>
+              <span>
+                <strong>Input Upload</strong>
+                <small>MI, SOP, MTM, List</small>
+              </span>
+              <b>7/7</b>
+            </button>
+            <button class="flow-item" data-stage="parse">
+              <span class="step-index">02</span>
+              <span>
+                <strong>Process Steps</strong>
+                <small>Structure extraction</small>
+              </span>
+              <b>Done</b>
+            </button>
+            <button class="flow-item" data-stage="steps">
+              <span class="step-index">03</span>
+              <span>
+                <strong>Process Time</strong>
+                <small>PT and actual time</small>
+              </span>
+              <b>Draft</b>
+            </button>
+            <button class="flow-item" data-stage="time">
+              <span class="step-index">04</span>
+              <span>
+                <strong>CT Calculation</strong>
+                <small>PT + volume + assumptions</small>
+              </span>
+              <b>Hold</b>
+            </button>
+            <button class="flow-item" data-stage="station">
+              <span class="step-index">05</span>
+              <span>
+                <strong>Station</strong>
+                <small>CT, HC, balance</small>
+              </span>
+              <b>Locked</b>
+            </button>
+            <button class="flow-item" data-stage="mapping">
+              <span class="step-index">06</span>
+              <span>
+                <strong>Layout</strong>
+                <small>U-shape, station size</small>
+              </span>
+              <b>Draft</b>
+            </button>
+            <button class="flow-item" data-stage="output">
+              <span class="step-index">07</span>
+              <span>
+                <strong>MI Output</strong>
+                <small>MI, Layout, LB, HC</small>
+              </span>
+              <b>Draft</b>
+            </button>
+          </section>
+
+          <section class="sidebar-section input-stack">
+            <div class="section-label">Input Sources</div>
+            <div class="source ok"><span>Historical MI</span><b>Loaded</b></div>
+            <div class="source ok"><span>Assembly Video</span><b>6 videos</b></div>
+            <div class="source ok"><span>MTM Database</span><b>8,214 codes</b></div>
+            <div class="source warn"><span>Mapping Table</span><b>Missing</b></div>
+            <div class="source ok"><span>Human Rule List</span><b>15 rules</b></div>
+            <div class="source ok"><span>Volume / Shift Assumption</span><b>2 shifts</b></div>
+          </section>
+        </aside>
+
+        <div id="sidebarResizeBar" class="horizontal-resize-bar sidebar-resize-bar" role="separator" aria-label="Resize sidebar and table" aria-orientation="vertical">
+          <span></span>
+        </div>
+
+        <section class="main-panel">
+          <div class="studio-hero">
+            <div class="hero-copy">
+              <div class="eyebrow">AI Process Studio</div>
+              <h1 id="stageTitle">Generate, verify, and release the assembly process.</h1>
+              <p id="stageDescription">
+                AI is organizing historical MI, historical SOP, MTM database, and human rules into a releasable assembly process package.
+              </p>
+            </div>
+            <div class="release-chip">
+              <span>Release Confidence</span>
+              <strong>82%</strong>
+            </div>
+          </div>
+
+          <div id="studioGrid" class="studio-grid">
+            <section class="model-card twin-stage">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="twinTitle">Historical MI Reference</h2>
+                  <p id="twinDescription">AI reads previous MI structure, images, work instructions, and CTQ references as the baseline.</p>
+                </div>
+                <span id="twinStatus" class="status-pill good">Parsed</span>
+              </div>
+              <div id="twinCanvas" class="twin-canvas">
+                <img src="assets/laptop-assembly-preview.png" alt="Exploded laptop assembly CAD preview" />
+                <div class="callout callout-a">
+                  <b>Thermal module</b>
+                  <span>Step 020 · fixture missing</span>
+                </div>
+                <div class="callout callout-b">
+                  <b>Display cable</b>
+                  <span>CTQ photo required</span>
+                </div>
+                <div class="callout callout-c">
+                  <b>Battery pack</b>
+                  <span>Dependency locked</span>
+                </div>
+              </div>
+              <div class="model-stats">
+                <span>214 parts</span>
+                <span>36 fasteners</span>
+                <span>12 cable paths</span>
+                <span>5 CTQ zones</span>
+              </div>
+            </section>
+
+            <div class="studio-side">
+              <section class="route-map flow-stage">
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="sideTitle">Generation Stack</h2>
+                    <p id="sideDescription">AI orchestration from input sources to final MI.</p>
+                  </div>
+                </div>
+                <div id="processStack" class="process-stack">
+                  <div class="stack-row done"><span>Historical MI</span><b>Previous package parsed</b></div>
+                  <div class="stack-row done"><span>SOP Mining</span><b>42 pages converted</b></div>
+                  <div class="stack-row active"><span>Station Synthesis</span><b>ST02 needs balance</b></div>
+                  <div class="stack-row warn"><span>Tooling Match</span><b>Mapping table missing</b></div>
+                  <div class="stack-row done"><span>MI Package</span><b>82% release ready</b></div>
+                </div>
+              </section>
+
+              <section class="insight-tile station-stage">
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="pressureTitle">Station Pressure</h2>
+                    <p>Station pressure under the 58s target CT.</p>
+                  </div>
+                </div>
+                <div id="stationRadar" class="station-radar">
+                  <div class="station-puck"><b>ST01</b><span>86%</span></div>
+                  <div class="station-puck hot"><b>ST02</b><span>97%</span></div>
+                  <div class="station-puck"><b>ST03</b><span>78%</span></div>
+                  <div class="station-puck calm"><b>ST05</b><span>61%</span></div>
+                </div>
+              </section>
+
+              <section class="pipeline-tile output-stage">
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="artifactTitle">Release Artifacts</h2>
+                    <p>Final engineering outputs in progress.</p>
+                  </div>
+                </div>
+                <div id="artifactStrip" class="artifact-strip">
+                  <div><b>MI</b><span>Draft</span></div>
+                  <div><b>LB</b><span>Chart</span></div>
+                  <div><b>HC</b><span>7.0</span></div>
+                  <div><b>Layout</b><span>v0.2</span></div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div id="verticalResizeBar" class="vertical-resize-bar" role="separator" aria-label="Resize SOP preview and table" aria-orientation="horizontal">
+            <span></span>
+          </div>
+
+          <section class="editor-section">
+            <div id="editorContext" class="editor-context">
+              <div>
+                <h2>Generated Step List</h2>
+                <p>AI-generated process steps with MTM timing and review status.</p>
+              </div>
+            </div>
+            <div class="toolbar">
+              <div class="segmented">
+                <button class="selected">All Steps</button>
+                <button>Needs Review</button>
+                <button>CTQ</button>
+                <button>Locked</button>
+              </div>
+              <input class="search" type="search" placeholder="Search step, station, part, tool..." />
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Step</th>
+                    <th>Process</th>
+                    <th>Station</th>
+                    <th>CT</th>
+                    <th>MTM</th>
+                    <th>Micro Steps</th>
+                    <th>Process Time</th>
+                    <th>Tooling</th>
+                    <th>Material</th>
+                    <th>Risk</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="stepRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+        </section>
+
+        <div id="horizontalResizeBar" class="horizontal-resize-bar" role="separator" aria-label="Resize table and AI panel" aria-orientation="vertical">
+          <span></span>
+        </div>
+
+        <aside class="ai-panel">
+          <div class="ai-header">
+            <div>
+              <div class="eyebrow">AI Review</div>
+              <h2 id="aiStepTitle">Step 020 · Install thermal module</h2>
+            </div>
+            <span id="confidence" class="confidence">72%</span>
+          </div>
+
+          <section class="ai-block">
+            <h3>AI Assessment</h3>
+            <p id="aiReason">
+              This step matches historical SOP page 14 and MTM code TM-443, but the fixture lacks mapping-table evidence and needs human confirmation.
+            </p>
+          </section>
+
+          <section class="ai-block">
+            <h3 id="evidenceTitle">Evidence Sources</h3>
+            <div id="evidenceList" class="evidence-list"></div>
+          </section>
+
+          <div class="ai-actions">
+            <button id="saveDraftBtn" class="icon-button">Save Draft</button>
+            <button id="continueBtn" class="primary-button">Continue</button>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="app.js?v=20260607-remove-human-constraints"></script>
+  </body>
+</html>

@@ -1,0 +1,846 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
+/* Visual polish layer. This file intentionally overrides presentation only. */
+:root {
+  --polish-bg-1: #edf7f5;
+  --polish-bg-2: #f7fbff;
+  --polish-card: rgba(255, 255, 255, 0.78);
+  --polish-card-strong: rgba(255, 255, 255, 0.92);
+  --polish-border: rgba(88, 111, 132, 0.15);
+  --polish-shadow: 0 18px 48px rgba(31, 49, 64, 0.10);
+  --polish-shadow-soft: 0 10px 28px rgba(31, 49, 64, 0.07);
+  --polish-mint: #13b997;
+  --polish-blue: #4f8df7;
+  --polish-ink: #1f3140;
+}
+
+html {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(19, 185, 151, 0.16), transparent 28%),
+    radial-gradient(circle at 84% 4%, rgba(79, 141, 247, 0.14), transparent 26%),
+    linear-gradient(135deg, var(--polish-bg-1), var(--polish-bg-2));
+}
+
+body {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.20)),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(74, 103, 124, 0.035) 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(74, 103, 124, 0.035) 32px);
+}
+
+.topbar,
+.sidebar,
+.main-panel,
+.ai-panel {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.topbar {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--polish-shadow-soft);
+}
+
+.brand-mark,
+.step-index,
+.primary-button,
+.station-table-action.primary,
+.sop-panel-toggle,
+.sop-generate-step,
+.micro-add-step,
+.mi-export-excel {
+  box-shadow: 0 10px 22px rgba(19, 185, 151, 0.18);
+}
+
+.sidebar,
+.main-panel,
+.ai-panel,
+.model-card,
+.editor-section,
+.route-map,
+.insight-tile,
+.pipeline-tile,
+.station-edit-row,
+.station-trace-panel,
+.ct-simple-calculator,
+.layout-sketch-card,
+.mi-package-header,
+.mi-document-fields,
+.mi-station-output-card {
+  border-color: var(--polish-border);
+  background: var(--polish-card);
+  box-shadow: var(--polish-shadow-soft);
+}
+
+.main-panel,
+.ai-panel,
+.sidebar {
+  border-radius: 24px;
+}
+
+.studio-hero {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.90), rgba(255, 255, 255, 0.62)),
+    linear-gradient(135deg, rgba(19, 185, 151, 0.08), rgba(79, 141, 247, 0.06));
+  box-shadow: var(--polish-shadow-soft);
+}
+
+.studio-hero h1,
+.panel-heading h2,
+.editor-context h2,
+.ai-header h2 {
+  letter-spacing: -0.025em;
+}
+
+.release-chip {
+  border: 1px solid rgba(79, 141, 247, 0.16);
+  background: linear-gradient(135deg, rgba(238, 252, 248, 0.88), rgba(235, 243, 255, 0.88));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.flow-item {
+  border-color: transparent;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.flow-item:hover {
+  transform: translateX(2px);
+  border-color: rgba(19, 185, 151, 0.18);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.flow-item.active {
+  box-shadow: inset 3px 0 0 var(--polish-mint), 0 10px 24px rgba(19, 185, 151, 0.10);
+}
+
+.source,
+.stack-row,
+.station-puck,
+.artifact-strip div,
+.timing-exposure-row,
+.parsed-artifact-row,
+.layout-dimension-row,
+.workflow-breakdown-row,
+.micro-xlsx-row td {
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.stack-row:hover,
+.station-edit-row:hover,
+.mapping-review-row:hover,
+.mi-station-output-card:hover {
+  transform: translateY(-1px);
+}
+
+input,
+textarea,
+select,
+.station-field,
+.micro-edit-field,
+.workflow-edit-field,
+.layout-dimension-field,
+.ct-calc-input,
+.mapping-field {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.station-field:focus,
+.micro-edit-field:focus,
+.workflow-edit-field:focus,
+.layout-dimension-field:focus,
+.ct-calc-input:focus,
+.mapping-field:focus {
+  border-color: rgba(19, 185, 151, 0.52);
+  box-shadow: 0 0 0 4px rgba(19, 185, 151, 0.12);
+}
+
+button,
+.primary-button,
+.icon-button,
+.station-action,
+.station-table-action,
+.micro-confirm-step,
+.micro-delete-step,
+.mi-image-upload span,
+.mi-export-excel {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease;
+}
+
+button:hover,
+.primary-button:hover,
+.icon-button:hover,
+.station-action:hover,
+.station-table-action:hover,
+.micro-confirm-step:hover,
+.micro-delete-step:hover,
+.mi-image-upload:hover span,
+.mi-export-excel:hover {
+  transform: translateY(-1px);
+}
+
+.table-wrap,
+.twin-canvas,
+.layout-u-scroll,
+.station-workflow-expanded {
+  scrollbar-color: rgba(74, 103, 124, 0.30) rgba(74, 103, 124, 0.08);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(74, 103, 124, 0.06);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: rgba(74, 103, 124, 0.32);
+}
+
+.ct-mode-card.active,
+.station-line-balance-summary,
+.station-edit-row.active,
+.workflow-breakdown-row.selected td {
+  background:
+    linear-gradient(135deg, rgba(238, 252, 248, 0.94), rgba(255, 255, 255, 0.78));
+  box-shadow: inset 3px 0 0 var(--polish-mint), var(--polish-shadow-soft);
+}
+
+.layout-blueprint {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62), var(--polish-shadow-soft);
+}
+
+.mi-station-output-card {
+  overflow: hidden;
+}
+
+.mi-image-upload span,
+.mi-export-excel,
+.station-table-action.primary {
+  background: linear-gradient(135deg, var(--polish-mint), #0b9f82);
+}
+
+.toast {
+  background: rgba(31, 49, 64, 0.92);
+  box-shadow: 0 18px 42px rgba(31, 49, 64, 0.22);
+}
+
+/* V2: stronger enterprise/manufacturing dashboard treatment. */
+body {
+  color: #17242f;
+  font-family: "IBM Plex Sans", Inter, "Segoe UI", Arial, sans-serif;
+}
+
+.app-shell {
+  background:
+    linear-gradient(90deg, rgba(15, 28, 38, 0.96) 0 276px, transparent 276px),
+    radial-gradient(circle at 78% 6%, rgba(79, 141, 247, 0.16), transparent 28%),
+    linear-gradient(135deg, #eaf3f5 0%, #f7fafc 48%, #eef7f3 100%);
+}
+
+.topbar {
+  min-height: 64px;
+  border: 0;
+  border-radius: 0 0 22px 22px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(243, 248, 250, 0.90));
+}
+
+.brand-mark {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+}
+
+.product-name {
+  color: #101c26;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.project-name,
+.run-state {
+  color: #60707f;
+}
+
+.sidebar {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(15, 28, 38, 0.96), rgba(24, 42, 55, 0.94));
+  box-shadow: 18px 0 48px rgba(15, 28, 38, 0.18);
+}
+
+.sidebar .section-label,
+.sidebar .source span,
+.sidebar .source b {
+  color: rgba(226, 236, 242, 0.70);
+}
+
+.flow-item {
+  color: rgba(240, 247, 250, 0.86);
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.flow-item strong {
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.flow-item small,
+.flow-item b {
+  color: rgba(218, 229, 236, 0.62);
+}
+
+.flow-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.flow-item.active {
+  border-color: rgba(20, 184, 166, 0.42);
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.24), rgba(79, 141, 247, 0.12));
+  box-shadow: inset 4px 0 0 #14b8a6, 0 14px 30px rgba(0, 0, 0, 0.18);
+}
+
+.flow-item.active .step-index {
+  background: #14b8a6;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.18);
+}
+
+.source {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.source.ok {
+  border-color: rgba(20, 184, 166, 0.22);
+}
+
+.source.warn {
+  border-color: rgba(245, 158, 11, 0.30);
+  background: rgba(245, 158, 11, 0.10);
+}
+
+.main-panel,
+.ai-panel {
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  background: rgba(248, 251, 252, 0.88);
+}
+
+.studio-hero {
+  border: 0;
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(96, 110, 120, 0.92), rgba(122, 135, 145, 0.86)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(31, 49, 64, 0.10));
+  color: #fff;
+}
+
+.studio-hero .eyebrow,
+.studio-hero p {
+  color: rgba(236, 246, 248, 0.72);
+}
+
+.studio-hero h1 {
+  color: #fff;
+  font-size: clamp(26px, 3vw, 40px);
+}
+
+.release-chip {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+.release-chip span {
+  color: rgba(236, 246, 248, 0.72);
+}
+
+.release-chip strong {
+  color: #5eead4;
+}
+
+.model-card,
+.editor-section,
+.ai-block,
+.route-map,
+.insight-tile,
+.pipeline-tile,
+.ct-simple-calculator,
+.station-edit-workspace,
+.station-trace-panel,
+.layout-sketch-card,
+.mi-package-header,
+.mi-document-fields,
+.mi-station-output-card {
+  border: 1px solid rgba(91, 112, 131, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 36px rgba(15, 28, 38, 0.08);
+}
+
+.panel-heading h2,
+.editor-context h2,
+.ai-header h2,
+.ct-simple-head b,
+.layout-sketch-head b,
+.mi-station-output-card h4 {
+  color: #17242f;
+  font-weight: 800;
+}
+
+.status-pill,
+.automation-chip,
+.chip,
+.release-chip,
+.station-line-balance-summary {
+  border-radius: 999px;
+}
+
+.station-line-balance-summary {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: #fff;
+}
+
+.station-line-balance-summary span {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.station-line-balance-summary strong {
+  color: #fff;
+}
+
+.table-wrap table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+thead th {
+  background: #eef4f6;
+  color: #5f6f7b;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+tbody tr {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+tbody tr:hover td {
+  background: rgba(235, 248, 245, 0.92);
+}
+
+.ct-mode-card,
+.station-edit-row,
+.workflow-breakdown-row,
+.mi-step-block,
+.mi-bom-row {
+  border-radius: 14px;
+}
+
+.ct-mode-card.active {
+  border-color: rgba(20, 184, 166, 0.56);
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.ct-result-box strong,
+.station-line-balance-summary strong,
+.mi-release-summary b {
+  letter-spacing: -0.04em;
+}
+
+.primary-button,
+.station-table-action.primary,
+.micro-confirm-step,
+.mi-export-excel,
+.mi-image-upload span {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: #fff;
+}
+
+.icon-button,
+.station-action,
+.station-table-action,
+.micro-delete-step {
+  border: 1px solid rgba(91, 112, 131, 0.16);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.ai-panel {
+  box-shadow: -14px 0 40px rgba(15, 28, 38, 0.08);
+}
+
+.ai-header {
+  border-bottom: 1px solid rgba(91, 112, 131, 0.10);
+  padding-bottom: 12px;
+}
+
+.confidence {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(79, 141, 247, 0.14));
+  color: #0f766e;
+}
+
+.layout-blueprint {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 35px, rgba(31, 49, 64, 0.045) 36px),
+    repeating-linear-gradient(90deg, transparent 0 35px, rgba(31, 49, 64, 0.045) 36px),
+    #fffdf7;
+}
+
+.layout-drawing-view .layout-u-scroll {
+  overflow: visible;
+  display: block;
+  padding: 18px;
+}
+
+.layout-drawing-view .layout-blueprint {
+  width: 100%;
+  max-width: none;
+  min-height: 560px;
+}
+
+.layout-drawing-view .layout-page-board {
+  padding-bottom: 28px;
+}
+
+.layout-drawing-view .layout-sketch-card {
+  overflow: visible;
+}
+
+.mi-package-view {
+  gap: 18px;
+}
+
+.mi-station-output-card header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(91, 112, 131, 0.10);
+}
+
+.mi-station-meta {
+  background: linear-gradient(135deg, rgba(238, 244, 246, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.ai-actions {
+  border-top: 1px solid rgba(91, 112, 131, 0.12);
+  background: linear-gradient(180deg, rgba(248, 251, 252, 0.22), rgba(248, 251, 252, 0.96));
+}
+
+.ai-actions .primary-button {
+  min-height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  font-weight: 900;
+}
+
+.ai-actions .icon-button {
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(91, 112, 131, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  color: #334155;
+  font-weight: 900;
+}
+
+.ai-actions .icon-button.saved {
+  border-color: rgba(20, 184, 166, 0.26);
+  background: rgba(236, 253, 245, 0.92);
+  color: #0f766e;
+}
+
+.ai-actions .primary-button:disabled {
+  transform: none;
+  box-shadow: none;
+  opacity: 0.46;
+  cursor: not-allowed;
+  filter: grayscale(0.3);
+}
+
+/* V3: improve input layout, title contrast, and station readability. */
+.input-intake-board {
+  gap: 18px;
+}
+
+.input-intake-hero {
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.55fr);
+  align-items: stretch;
+  border: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(241, 248, 250, 0.94));
+  box-shadow: 0 18px 42px rgba(15, 28, 38, 0.10);
+}
+
+.input-intake-hero h3,
+.input-start-card strong,
+.upload-slot-card b,
+.upload-slot-card strong,
+.upload-note-strip b,
+.ct-simple-calculator b,
+.layout-sketch-card b,
+.model-card h2,
+.editor-section h2,
+.ai-panel h2,
+.ai-panel h3 {
+  color: #17242f;
+}
+
+.input-intake-hero p {
+  max-width: 720px;
+  color: #5b6a78;
+}
+
+.input-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #0f766e;
+}
+
+.input-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #14b8a6;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.14);
+}
+
+.input-start-card {
+  border: 1px solid rgba(20, 184, 166, 0.18);
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.input-start-card button {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  box-shadow: 0 12px 24px rgba(20, 184, 166, 0.20);
+}
+
+.upload-slot-grid {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.upload-slot-card {
+  position: relative;
+  min-height: 190px;
+  padding: 16px;
+  border: 1px solid rgba(91, 112, 131, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 32px rgba(15, 28, 38, 0.08);
+}
+
+.upload-slot-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: 14px 0 0 14px;
+  background: #94a3b8;
+}
+
+.upload-slot-card.done::before,
+.upload-slot-card.ok::before {
+  background: #14b8a6;
+}
+
+.upload-slot-card.review::before,
+.upload-slot-card.warn::before {
+  background: #f59e0b;
+}
+
+.upload-slot-card b {
+  font-size: 15px;
+  letter-spacing: -0.015em;
+}
+
+.upload-slot-card span {
+  color: #60707f;
+}
+
+.upload-action span {
+  border: 1px solid rgba(20, 184, 166, 0.20);
+  background: rgba(236, 253, 245, 0.92);
+  color: #0f766e;
+}
+
+.upload-note-strip {
+  border-style: dashed;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.model-card,
+.editor-section,
+.route-map,
+.insight-tile,
+.pipeline-tile,
+.ct-simple-calculator,
+.layout-sketch-card,
+.mi-package-header,
+.mi-document-fields,
+.mi-station-output-card {
+  background: rgba(255, 255, 255, 0.97);
+}
+
+.panel-heading h2,
+.editor-context h2,
+.ai-header h2,
+.ai-block h3,
+.station-material-head b,
+.station-workflow-toggle b {
+  color: #17242f !important;
+}
+
+.panel-heading p,
+.editor-context p,
+.ai-block p {
+  color: #5f6f7b;
+}
+
+.station-edit-head {
+  margin: 4px 0 0;
+  padding: 0 14px;
+  color: #667788;
+  letter-spacing: 0.08em;
+}
+
+.station-edit-row {
+  position: relative;
+  min-height: 74px;
+  align-items: center;
+  padding: 12px 14px 12px 16px;
+  border: 1px solid rgba(91, 112, 131, 0.16);
+  border-left: 5px solid #14b8a6;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 28px rgba(15, 28, 38, 0.08);
+}
+
+.station-edit-row.over {
+  border-left-color: #ef4444;
+}
+
+.station-edit-row.near {
+  border-left-color: #f59e0b;
+}
+
+.station-edit-row.automation {
+  border-left-color: #4f8df7;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.station-code-cell {
+  align-items: center;
+}
+
+.station-code-field {
+  min-height: 42px;
+  border: 0;
+  background: #eef6f5;
+  color: #0f766e;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.station-expand-toggle {
+  min-height: 42px;
+  border-color: rgba(20, 184, 166, 0.22);
+  background: #ecfdf5;
+}
+
+.station-automation-cell .automation-chip {
+  min-width: 36px;
+  min-height: 26px;
+  border: 1px solid rgba(91, 112, 131, 0.10);
+  background: #eef2f7;
+  color: #475569;
+}
+
+.station-automation-cell .automation-chip.auto {
+  background: #e8f1ff;
+  color: #2f6dd6;
+}
+
+.station-field {
+  min-height: 44px;
+  border-color: rgba(91, 112, 131, 0.14);
+  background: #f8fafc;
+}
+
+.station-hc-field {
+  text-align: center;
+  color: #17242f;
+  font-weight: 900;
+}
+
+.station-edit-actions {
+  align-content: center;
+}
+
+.station-action-row {
+  gap: 8px;
+}
+
+.station-action {
+  min-height: 32px;
+}
+
+.station-line-balance-summary {
+  min-height: 62px;
+  padding: 14px 18px;
+  border: 0;
+  box-shadow: 0 16px 34px rgba(15, 118, 110, 0.20);
+}
+
+.station-line-balance-summary span {
+  letter-spacing: 0.08em;
+}
+
+.station-line-balance-summary strong {
+  font-size: 34px;
+}
+
+@media (max-width: 1120px) {
+  .upload-slot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .input-intake-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+.studio-hero h1,
+.panel-heading h2,
+.editor-context h2,
+.ai-header h2,
+.ai-block h3,
+.input-intake-hero h3,
+.sop-flow-head b,
+.ct-simple-head b,
+.ct-method-title b,
+.station-plan-card strong,
+.station-line-balance-summary strong,
+.layout-sketch-head b,
+.mi-package-header h3,
+.mi-station-output-card h4,
+.mi-station-output-card h5 {
+  color: #000 !important;
+}
