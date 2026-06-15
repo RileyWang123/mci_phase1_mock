@@ -27,7 +27,7 @@ body {
 
 body {
   margin: 0;
-  min-width: 1180px;
+  min-width: 1040px;
   color: var(--text);
   background:
     radial-gradient(circle at 18% -8%, rgba(19, 185, 151, 0.18), transparent 34%),
@@ -154,7 +154,7 @@ button {
 
 .workspace {
   display: grid;
-  grid-template-columns: var(--sidebar-width, 248px) 10px minmax(560px, var(--main-panel-width, 1fr)) 10px minmax(240px, var(--ai-panel-width, 340px));
+  grid-template-columns: minmax(208px, var(--sidebar-width, 224px)) 8px minmax(0, var(--main-panel-width, 1fr)) 8px minmax(260px, var(--ai-panel-width, 316px));
   height: calc(100vh - 62px);
   overflow: hidden;
 }
@@ -196,7 +196,7 @@ button {
 }
 
 .sidebar {
-  padding: 16px 12px;
+  padding: 14px 10px;
   border-right: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.56);
 }
@@ -219,9 +219,9 @@ button {
   display: grid;
   grid-template-columns: 30px 1fr auto;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   margin-top: 7px;
-  padding: 9px;
+  padding: 8px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -304,7 +304,7 @@ button {
 }
 
 .main-panel {
-  padding: 12px;
+  padding: 10px;
 }
 
 h1,
@@ -382,7 +382,7 @@ h1 {
 
 .studio-grid {
   display: grid;
-  grid-template-columns: minmax(420px, 1.1fr) minmax(360px, 0.9fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   align-items: stretch;
   gap: 14px;
   margin-bottom: 12px;
@@ -5720,6 +5720,24 @@ tbody tr.override-row {
 
 .bar.warn span {
   background: linear-gradient(90deg, var(--amber), var(--coral));
+}
+
+@media (max-width: 1200px) {
+  body {
+    min-width: 980px;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(190px, 208px) 6px minmax(0, 1fr) 6px minmax(240px, 280px);
+  }
+
+  .topbar {
+    padding: 0 12px;
+  }
+
+  .studio-hero {
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
 }
 
 .layout-grid,
