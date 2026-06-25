@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mci_phase1
+      POSTGRES_USER: mci
+      POSTGRES_PASSWORD: mci
+    ports:
+      - "55433:5432"
+    volumes:
+      - mci_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mci -d mci_phase1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://mci:mci@db:5432/mci_phase1
+      UPLOAD_DIR: /data/uploads
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://google-gemini.prod.ai-gateway.quantumblack.com/00e1965c-2aac-49de-a6cf-9ace08781d0b}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+    ports:
+      - "4000:4000"
+    volumes:
+      - mci_uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  balancer:
+    build:
+      context: ./balancer
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://google-gemini.prod.ai-gateway.quantumblack.com/00e1965c-2aac-49de-a6cf-9ace08781d0b}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
+    ports:
+      - "4001:4001"
+
+volumes:
+  mci_db_data:
+  mci_uploads:

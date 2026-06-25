@@ -45,7 +45,6 @@ const document = {
   },
 };
 
-const source = loadAppScripts();
 const sandbox = {
   document,
   window: {
@@ -57,39 +56,23 @@ const sandbox = {
 
 vm.createContext(sandbox);
 vm.runInContext(
-  `${source}
-globalThis.__miTest = {
+  `${loadAppScripts()}
+globalThis.__miOutputTest = {
   renderStage,
-  refs,
-  stationDraft,
-  stationMaterialLists,
-  sopMacroSteps
+  refs
 };`,
   sandbox,
   { filename: "app.js" },
 );
 
-const api = sandbox.__miTest;
+const api = sandbox.__miOutputTest;
 api.renderStage("output");
 
-const html = api.refs.twinCanvas.innerHTML;
-const stations = api.stationDraft.map((station) => station.id);
-const microStepLabels = api.sopMacroSteps.flatMap((step) => step.microSteps.map((microStep) => microStep[0])).slice(0, 8);
-
-assert.match(html, /MI Package Preview|Manufacturing Instruction/i);
-assert.doesNotMatch(html, /MI Draft · ST01 Thermal Module/);
-assert.doesNotMatch(html, /AI Generated Warnings/);
-
-for (const station of stations) {
-  assert.match(html, new RegExp(station), `MI output missing station ${station}`);
-}
-
-for (const label of microStepLabels) {
-  assert.match(html, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `MI output missing detailed step ${label}`);
-}
-
-assert.match(html, /Target CT\s*58s/);
-assert.match(html, /ST02[\s\S]*48s[\s\S]*Ready/);
-assert.match(html, /Step List/);
-assert.match(html, /Quality Risk/);
-assert.match(html, /Fill quality risk/);
+assert.equal(api.refs.title.textContent, "MI Package Output");
+assert.match(api.refs.twinCanvas.innerHTML, /mi-package-view/);
+assert.match(api.refs.twinCanvas.innerHTML, /MI Package Preview/);
+assert.match(api.refs.twinCanvas.innerHTML, /Part Number/);
+assert.match(api.refs.twinCanvas.innerHTML, /data-mi-ctq-station/);
+assert.match(api.refs.twinCanvas.innerHTML, /data-mi-risk-station/);
+assert.equal(api.refs.evidenceTitle.textContent, "Export Action");
+assert.match(api.refs.evidenceList.innerHTML, /Export Excel/);

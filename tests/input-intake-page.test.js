@@ -1,7 +1,6 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
+const { loadAppScripts } = require("./load-app-scripts");
 
 class FakeElement {
   constructor() {
@@ -43,8 +42,7 @@ const document = {
   },
 };
 
-const appPath = path.join(__dirname, "..", "app.js");
-const source = fs.readFileSync(appPath, "utf8");
+const source = loadAppScripts();
 const sandbox = {
   document,
   window: {
@@ -84,6 +82,8 @@ assert.match(canvasHtml, /Upload Historical MI/);
 assert.match(canvasHtml, /Upload Assembly Video/);
 assert.match(canvasHtml, /Upload MTM \/ History/);
 assert.match(canvasHtml, /type="file"/);
+assert.match(canvasHtml, /Parse Uploaded Inputs/);
+assert.match(canvasHtml, /data-action="parse-uploaded-inputs" disabled/);
 assert.doesNotMatch(canvasHtml, /Ready for SOP Parsing/);
 assert.doesNotMatch(canvasHtml, /coverage/i);
 assert.doesNotMatch(canvasHtml, /Exploded laptop assembly CAD preview/);

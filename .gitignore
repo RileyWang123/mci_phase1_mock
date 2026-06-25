@@ -2,3 +2,8 @@
 *.xls
 *.pptx
 *.ppt
+node_modules/
+backend/node_modules/
+uploads/
+backend/uploads/
+.env

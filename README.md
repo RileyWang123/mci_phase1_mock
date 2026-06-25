@@ -1,12 +1,66 @@
-# MCI Phase 1 Mock Dashboard Progress
+# MCI Phase 1 Mock Dashboard
 
-This README records the current dashboard feature set and layout decisions so a new chat can quickly understand the project state.
+This README records the current dashboard feature set, frontend module structure, and local backend setup so a new chat can quickly understand the project state.
 
 ## How To Open
 
 - Open `index.html` directly in the browser.
-- The mock is frontend-only. There is no backend, API, database, or persistent save.
-- Most edits are stored in JavaScript memory during the browser session only. Refreshing the page resets the mock data.
+- The UI can still run as a static mock.
+- A local Docker backend has been added for input file upload/status persistence.
+- Most non-upload edits are still stored in JavaScript memory during the browser session only. Refreshing the page resets those mock edits.
+
+## Local Backend
+
+The first backend slice supports Page 01 input file upload and upload status.
+
+Start the backend and database:
+
+```bash
+docker compose up --build
+```
+
+To enable real video parsing through the Gemini gateway, configure the root `.env` file once:
+
+```env
+GEMINI_API_KEY=real_key_here
+GEMINI_BASE_URL=https://google-gemini.prod.ai-gateway.quantumblack.com/00e1965c-2aac-49de-a6cf-9ace08781d0b
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+Then start Docker normally:
+
+```bash
+docker compose up --build
+```
+
+The real `.env` file is ignored by git. Use `.env.example` as the template if the local file is missing.
+
+Services:
+
+- API: `http://localhost:4000`
+- Postgres: `localhost:55433`
+- Uploaded files are stored in the Docker volume `mci_uploads`.
+- Database data is stored in the Docker volume `mci_db_data`.
+
+Current API:
+
+- `GET /health`
+- `GET /api/input-files`
+- `GET /api/input-files/status`
+- `POST /api/input-files/upload`
+- `POST /api/input-files/parse`
+- `GET /api/input-files/parse/latest`
+- `GET /api/input-files/parse/:jobId`
+
+Upload request shape:
+
+```bash
+curl -F "source=Assembly Video" -F "file=@sample.mp4" http://localhost:4000/api/input-files/upload
+```
+
+The frontend calls this backend from Page 01 when running locally. If the backend is offline, the static UI still loads and shows the mock state.
+
+`Parse Uploaded Inputs` on Page 01 calls the parse API. The backend stores a parse job, calls the Gemini gateway, saves structured SOP JSON, and returns the result to the frontend. The frontend then maps the parsed workflows into Page 02 through Page 07 state.
 
 ## Current Flow
 
@@ -21,6 +75,27 @@ The active navigation flow has 7 pages:
 7. `MI Output`
 
 Historical pages such as `Human Input Gate` still exist in parts of `app.js`, but they are not active in the current `stageFlow`.
+
+## Frontend Architecture
+
+The frontend has completed the first low-risk refactor from one large `app.js` into page modules and shared components. It still uses plain JavaScript and global factory modules so the demo can run from `index.html` without a bundler.
+
+Current module layout:
+
+- `app.js`: mock data, shared state, stage orchestration, global helper wrappers, and compatibility glue.
+- `src/pages/input-page.js`: Page 01 input upload canvas, upload binding, and upload panel.
+- `src/pages/process-step-page.js`: Page 02 SOP structure review canvas, panel, and add-step form state.
+- `src/pages/process-time-page.js`: Page 03 process time canvas and panel.
+- `src/pages/ct-calculation-page.js`: Page 04 CT calculator canvas, panel, rows, and calculator bindings.
+- `src/pages/station-page.js`: Page 05 station canvas, KPI view, station rows, station edit actions, and station panel.
+- `src/pages/layout-page.js`: Page 06 U-shaped layout canvas, layout dimension rows, selection binding, and layout panel.
+- `src/pages/mi-output-page.js`: Page 07 MI preview, CTQ / quality risk / image bindings, CSV export, and export panel.
+- `src/components/ai-panel.js`: shared right-side AI / evidence panel renderer.
+- `src/components/workflow-table.js`: shared SOP workflow table used by Page 02 and Page 03.
+- `src/api/input-files-api.js`: Page 01 input file API client.
+- `src/state/input-upload-state.js`: Page 01 upload status state mapper.
+
+The current goal of this refactor is maintainability without changing the demo runtime model. A future phase could introduce a build tool or framework, but that has intentionally not been done yet.
 
 ## Page 01: Input Upload
 
@@ -286,7 +361,7 @@ Historical pages such as `Human Input Gate` still exist in parts of `app.js`, bu
 - Each station output card has an `Upload Image` button.
 - Uploaded image name and preview are shown in the station card.
 - Each station output card shows a flat detailed step list, not SOP workflow groups.
-- Step list columns are `Step`, `Step Description`, and `Part Name`.
+- Step list columns are `Step`, `Step Description`, `Part Name`, and `Part Number`.
 - Each station output card has a second `Quality Risk` table with 3 manually editable rows.
 - Right panel includes `Export Excel`, limited to this page.
 - Export includes station/package data currently available in the frontend state.
@@ -305,7 +380,7 @@ Historical pages such as `Human Input Gate` still exist in parts of `app.js`, bu
 
 ## Data / State Notes
 
-The mock uses in-memory JavaScript state in `app.js`.
+Most dashboard edits still use in-memory JavaScript state. The state is initialized in `app.js` and passed into page modules through factory dependencies. This keeps cross-page data such as station plans available to Page 05, Page 06, and Page 07 without adding a frontend framework.
 
 Important state areas include:
 
@@ -319,18 +394,35 @@ Important state areas include:
 - `draftSavedByStage`: draft save state for continue gating.
 - `microChangeStats`: added / deleted / moved step tracking.
 - `microColumnFilters`: table filter state.
+- Page modules receive these values through getter/setter callbacks rather than owning the source arrays directly.
 
 ## Important Files
 
 - `index.html`: app shell, navigation, top bar, main regions, side panel, resize bars, action buttons.
-- `app.js`: all mock data, rendering logic, interactivity, calculations, drag/drop, upload, export, and stage flow.
+- `app.js`: mock data, shared state, stage flow orchestration, and compatibility wrappers for page modules.
+- `src/pages/`: page-specific rendering and interaction modules for Page 01 through Page 07.
+- `src/components/`: shared UI components used across pages.
+- `src/api/`: frontend API clients.
+- `src/state/`: frontend state mappers.
+- `backend/src/server.js`: local Express API for Page 01 input file upload/status persistence and parse job/result endpoints.
+- `backend/src/ai-parser.js`: Gemini gateway adapter and parsed SOP JSON normalization.
 - `styles.css`: base layout and component styling.
 - `design-polish.css`: visual polish override layer.
-- `tests/`: existing lightweight UI tests.
+- `tests/`: lightweight module and smoke tests.
+
+## Tests
+
+Run the current frontend smoke suite with:
+
+```bash
+node tests/ai-panel.test.js; node tests/input-files-api.test.js; node tests/input-intake-page.test.js; node tests/process-step-page.test.js; node tests/process-time-page.test.js; node tests/ct-calculation-page.test.js; node tests/station-page.test.js; node tests/layout-page.test.js; node tests/mi-output-page.test.js; node tests/mi-output-alignment.test.js; node tests/english-ui.test.js; node backend/tests/ai-parser.test.js
+```
+
+The tests use Node's `vm` module plus a small fake DOM. `tests/load-app-scripts.js` loads frontend scripts in the same order as `index.html`.
 
 ## Product Decisions Already Made
 
-- No backend is required for this mock phase.
+- The UI remains a static-compatible frontend mock, but a small local backend now supports Page 01 file upload/status persistence.
 - SOP workflow editing and detailed step editing happen together on Page 02.
 - Process Time is split from SOP Structure Review and owns all timing fields.
 - Human review page was removed from active navigation.
@@ -342,7 +434,8 @@ Important state areas include:
 
 ## Known Limitations
 
-- Data does not persist after browser refresh.
+- Most non-upload edits do not persist after browser refresh.
+- Page 01 upload status persists through the local backend when Docker services are running.
 - Upload image previews are local browser previews only.
 - Export is frontend-generated and reflects current mock data only.
 - Layout is a review sketch, not CAD-accurate.
@@ -350,7 +443,7 @@ Important state areas include:
 
 ## Suggested Next Tasks
 
-- Clean up unused legacy page code after the layout is stable.
+- Clean up unused legacy stage code after the current demo flow is stable.
 - Add persistent local storage if the mock needs to survive refresh.
 - Add more realistic Excel export formatting if needed for demo.
 - Capture final screenshots for each step and insert them into the generated one-page PPT.

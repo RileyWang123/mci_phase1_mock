@@ -854,6 +854,8 @@ const inputSources = [
   },
 ];
 
+const uploadSourceNames = ["Historical MI", "Assembly Video", "MTM Database"];
+
 const stationDraft = [
   { id: "ST01", time: 54, hc: "1.0", state: "ok", steps: ["010", "020"], note: "Cover removal + thermal module", issue: "Within CT, fixture ID still pending" },
   { id: "ST02", time: 61, hc: "1.5", state: "over", steps: ["030"], note: "Display cable routing + CTQ photo", issue: "3s over target CT, CTQ photo cannot be dropped" },
@@ -919,13 +921,13 @@ stationPlanB.forEach(initializeStationRuntime);
 const stationPlanMeta = {
   planA: {
     name: "Plan A",
-    label: "Current Draft",
-    description: "Original AI station draft with current manual review state.",
+    label: "Plan A",
+    description: "AI station balancing plan.",
   },
   planB: {
     name: "Plan B",
-    label: "Balanced Alternative",
-    description: "Alternative grouping with smoother station load and fewer overloaded rows.",
+    label: "Plan B",
+    description: "AI station balancing plan.",
   },
 };
 
@@ -1021,11 +1023,67 @@ const videoSopWorkflows = [
   },
 ];
 
-function applyVideoInputDemoData() {
+function normalizeParsedWorkflow(workflow, index = 0) {
+  return {
+    id: String(workflow.id || (index + 1) * 10).padStart(3, "0"),
+    process: workflow.process || workflow.title || `Video Workflow ${index + 1}`,
+    detail: workflow.detail || workflow.description || "Generated from uploaded assembly video.",
+    station: workflow.station || "Video extracted station",
+    material: workflow.material || "TBD",
+    confidence: workflow.confidence || "AI parsed",
+    evidence: Array.isArray(workflow.evidence) ? workflow.evidence : [workflow.detail || "Video evidence"],
+    microSteps: (Array.isArray(workflow.microSteps) && workflow.microSteps.length ? workflow.microSteps : [{ description: "Review extracted operation.", partName: "TBD" }]).map((microStep, microIndex) => {
+      if (Array.isArray(microStep)) {
+        return {
+          description: microStep[0] || `Extracted action ${microIndex + 1}`,
+          partName: microStep[1] || "TBD",
+          theoreticalPt: Number(microStep[2]) || [6, 7, 5, 8, 6, 7, 5][microIndex % 7],
+          actualPt: Number(microStep[4]) || [6, 7.5, 5.5, 8, 6.5, 7, 5.5][microIndex % 7],
+          automation: microStep[7] === "A" ? "A" : "M",
+          evidence: microStep[5] || "",
+        };
+      }
+      return {
+        description: microStep.description || microStep.stepDescription || `Extracted action ${microIndex + 1}`,
+        partName: microStep.partName || microStep.part || microStep.material || "TBD",
+        theoreticalPt: Number(microStep.theoreticalPt ?? microStep.pt) || [6, 7, 5, 8, 6, 7, 5][microIndex % 7],
+        actualPt: Number(microStep.actualPt ?? microStep.theoreticalPt ?? microStep.pt) || [6, 7.5, 5.5, 8, 6.5, 7, 5.5][microIndex % 7],
+        automation: microStep.automation === "A" ? "A" : "M",
+        evidence: microStep.evidence || "",
+      };
+    }),
+  };
+}
+
+function getWorkflowTime(workflow) {
+  return Math.round(workflow.microSteps.reduce((sum, microStep) => sum + (Number(microStep.actualPt) || Number(microStep.theoreticalPt) || 0), 0));
+}
+
+function buildStationFromParsedWorkflow(workflow, index, sourceName = "Assembly Video") {
+  const time = getWorkflowTime(workflow);
+  return {
+    id: `ST${String(index + 1).padStart(2, "0")}`,
+    time,
+    hc: "1.0",
+    state: time > 58 ? "over" : time === 0 ? "light" : "ok",
+    steps: [workflow.id],
+    note: workflow.process,
+    issue: `AI parsed from ${sourceName}; confirm tooling / CTQ before release`,
+  };
+}
+
+function applyVideoInputDemoData(workflows = videoSopWorkflows, sourceFile = null) {
+  const parsedWorkflows = workflows.map(normalizeParsedWorkflow);
+  // Each video numbers its own workflow from "010", so merged workflows collide on id.
+  // Re-number sequentially (010, 020, ...) so getMacroStep(id) resolves the right microSteps.
+  parsedWorkflows.forEach((workflow, index) => {
+    workflow.id = String((index + 1) * 10).padStart(3, "0");
+  });
+  const sourceName = sourceFile?.originalName || sourceFile?.original_name || "Assembly Video";
   steps.splice(
     0,
     steps.length,
-    ...videoSopWorkflows.map((workflow) => ({
+    ...parsedWorkflows.map((workflow) => ({
       id: workflow.id,
       process: workflow.process,
       detail: workflow.detail,
@@ -1036,63 +1094,102 @@ function applyVideoInputDemoData() {
       material: workflow.material,
       risk: "Medium",
       status: "Extracted",
-      confidence: "Video input",
+      confidence: workflow.confidence || "Video input",
       reason: `${workflow.process} was generated from the provided video operation transcript.`,
       missing: ["Confirm standard time", "Confirm fixture / tool ID if applicable"],
-      evidence: [workflow.detail],
+      evidence: workflow.evidence?.length ? workflow.evidence : [workflow.detail],
     })),
   );
 
   sopMacroSteps.splice(
     0,
     sopMacroSteps.length,
-    ...videoSopWorkflows.map((workflow) => ({
+    ...parsedWorkflows.map((workflow) => ({
       id: workflow.id,
       title: workflow.process,
       station: workflow.station,
       source: workflow.detail.split(":")[0],
       status: "Extracted",
       tone: "review",
-      microSteps: workflow.microSteps.map(([description, partName], index) => [
-        description,
+      microSteps: workflow.microSteps.map((microStep) => [
+        microStep.description,
         "TBD",
-        [6, 7, 5, 8, 6, 7, 5][index % 7],
+        microStep.theoreticalPt,
         "Extracted",
-        [6, 7.5, 5.5, 8, 6.5, 7, 5.5][index % 7],
+        microStep.actualPt,
+        microStep.evidence || "",
         "",
-        "",
-        "M",
-        partName,
+        microStep.automation,
+        microStep.partName,
       ]),
     })),
   );
 
+  const stationDraftRows = sourceFile
+    ? parsedWorkflows.map((workflow, index) => buildStationFromParsedWorkflow(workflow, index, sourceName))
+    : [
+        { id: "ST01", time: 49, hc: "1.0", state: "ok", steps: ["010"], note: "左天線上半段組理", issue: "確認天線貼附按壓標準" },
+        { id: "ST02", time: 48, hc: "1.0", state: "ok", steps: ["020"], note: "左天線下半段走線", issue: "確認線纜末端標籤位置" },
+        { id: "ST03", time: 50, hc: "1.0", state: "ok", steps: ["030"], note: "Middle Board 預熱與組裝", issue: "確認熱風槍設定" },
+        { id: "ST04", time: 49, hc: "1.0", state: "ok", steps: ["040"], note: "Middle Board 鎖附", issue: "確認 6 顆螺絲鎖附順序" },
+        { id: "ST05", time: 47, hc: "1.0", state: "ok", steps: ["050"], note: "Camera BRK 預組裝", issue: "確認壓合機台參數" },
+        { id: "ST06", time: 51, hc: "1.0", state: "ok", steps: ["060"], note: "Camera 到 Cover 總裝", issue: "EDP 線對位接近目標 CT" },
+      ];
+  const stationPlanBRows = sourceFile
+    ? parsedWorkflows.map((workflow, index) => ({
+        ...buildStationFromParsedWorkflow(workflow, index, sourceName),
+        issue: "Balanced alternative from parsed SOP; confirm station grouping",
+      }))
+    : [
+        { id: "ST01", time: 52, hc: "1.0", state: "ok", steps: ["010"], note: "左天線上半段組理", issue: "保留原始順序" },
+        { id: "ST02", time: 53, hc: "1.0", state: "ok", steps: ["020", "030"], note: "左天線下半段走線 + Middle Board 預處理", issue: "平衡後的混合人工站" },
+        { id: "ST03", time: 54, hc: "1.0", state: "ok", steps: ["040"], note: "Middle Board 鎖附", issue: "治具站獨立" },
+        { id: "ST04", time: 52, hc: "1.0", state: "ok", steps: ["050"], note: "Camera BRK 預組裝", issue: "壓合機台站獨立" },
+        { id: "ST05", time: 52, hc: "1.0", state: "ok", steps: ["060"], note: "Camera 到 Cover 總裝", issue: "總裝步驟較長" },
+      ];
+
   stationDraft.splice(
     0,
     stationDraft.length,
-    { id: "ST01", time: 49, hc: "1.0", state: "ok", steps: ["010"], note: "左天線上半段組理", issue: "確認天線貼附按壓標準" },
-    { id: "ST02", time: 48, hc: "1.0", state: "ok", steps: ["020"], note: "左天線下半段走線", issue: "確認線纜末端標籤位置" },
-    { id: "ST03", time: 50, hc: "1.0", state: "ok", steps: ["030"], note: "Middle Board 預熱與組裝", issue: "確認熱風槍設定" },
-    { id: "ST04", time: 49, hc: "1.0", state: "ok", steps: ["040"], note: "Middle Board 鎖附", issue: "確認 6 顆螺絲鎖附順序" },
-    { id: "ST05", time: 47, hc: "1.0", state: "ok", steps: ["050"], note: "Camera BRK 預組裝", issue: "確認壓合機台參數" },
-    { id: "ST06", time: 51, hc: "1.0", state: "ok", steps: ["060"], note: "Camera 到 Cover 總裝", issue: "EDP 線對位接近目標 CT" },
+    ...stationDraftRows,
   );
 
   stationPlanB.splice(
     0,
     stationPlanB.length,
-    { id: "ST01", time: 52, hc: "1.0", state: "ok", steps: ["010"], note: "左天線上半段組理", issue: "保留原始順序" },
-    { id: "ST02", time: 53, hc: "1.0", state: "ok", steps: ["020", "030"], note: "左天線下半段走線 + Middle Board 預處理", issue: "平衡後的混合人工站" },
-    { id: "ST03", time: 54, hc: "1.0", state: "ok", steps: ["040"], note: "Middle Board 鎖附", issue: "治具站獨立" },
-    { id: "ST04", time: 52, hc: "1.0", state: "ok", steps: ["050"], note: "Camera BRK 預組裝", issue: "壓合機台站獨立" },
-    { id: "ST05", time: 52, hc: "1.0", state: "ok", steps: ["060"], note: "Camera 到 Cover 總裝", issue: "總裝步驟較長" },
+    ...stationPlanBRows,
   );
 
   stationDraft.forEach(initializeStationRuntime);
   stationPlanB.forEach(initializeStationRuntime);
 }
 
-applyVideoInputDemoData();
+function applyParsedSopData(parsedResult) {
+  const workflows = parsedResult?.workflows;
+  if (!Array.isArray(workflows) || !workflows.length) {
+    showToast("Video parsing completed but no SOP workflows were returned");
+    return;
+  }
+  applyVideoInputDemoData(workflows, parsedResult.sourceFile);
+  selectedStepId = steps[0]?.id || "";
+  selectedMacroStepId = sopMacroSteps[0]?.id || "";
+  selectedStationId = stationDraft[0]?.id || "";
+  activeStationPlanId = "planA";
+  stationViewMode = "plan";
+  draftSavedByStage.parse = false;
+  draftSavedByStage.steps = false;
+  draftSavedByStage.time = false;
+  draftSavedByStage.station = false;
+  draftSavedByStage.mapping = false;
+  showToast(`${workflows.length} SOP workflow(s) parsed from uploaded video`);
+}
+
+function clearGeneratedWorkflowData() {
+  steps.splice(0, steps.length);
+  sopMacroSteps.splice(0, sopMacroSteps.length);
+}
+
+clearGeneratedWorkflowData();
 
 const mappingRows = [
   {
@@ -1349,7 +1446,6 @@ let draggedMicroStep = null;
 let resizingParseCanvas = false;
 let resizingSidebar = false;
 let resizingHorizontalPanels = false;
-let sopAddPanelOpen = false;
 let ctInputMode = "ct";
 const ctCalculatorState = {
   targetCt: 58,
@@ -1366,24 +1462,189 @@ const draftSavedByStage = {
   station: false,
   mapping: false,
 };
-const expandedStations = {};
-const expandedStationWorkflows = {};
+const apiBaseUrl = window.MCI_API_BASE || "http://localhost:4000";
+const inputFilesApi = globalThis.MciInputFilesApi.createInputFilesApi({ baseUrl: apiBaseUrl });
+const inputUploadState = globalThis.MciInputUploadState.createInputUploadState({
+  inputSources,
+  uploadSourceNames,
+});
+const inputPage = globalThis.MciInputPage.createInputPage({
+  inputSources,
+  inputFilesApi,
+  inputUploadState,
+  aiPanel: globalThis.MciAiPanel,
+  escapeHtml,
+  isActive: () => currentStageKey === "inputs",
+  renderInputs: () => renderStage("inputs"),
+  applyParsedResult: applyParsedSopData,
+});
+const processStepPage = globalThis.MciProcessStepPage.createProcessStepPage({
+  steps,
+  escapeHtml,
+  formatStepId,
+  aiPanel: globalThis.MciAiPanel,
+  getSopStepTone,
+  getSopReviewState,
+  getSelectedStepId: () => selectedStepId,
+  setSelectedStepId: (stepId) => {
+    selectedStepId = stepId;
+  },
+  getDraggedSopStepId: () => draggedSopStepId,
+  setDraggedSopStepId: (stepId) => {
+    draggedSopStepId = stepId;
+  },
+  renderRows,
+  renderCurrentPanel: renderParsePanel,
+  renderParse: () => renderStage("parse"),
+  onGenerateSopStep: generateSopStepFromDraft,
+  moveSopStep,
+  deleteSopStep,
+  updateSopStepFromField,
+});
 const microChangeStats = {
   added: 0,
   deleted: 0,
   moved: 0,
 };
-const sopStepDraft = {
-  process: "",
-  detail: "",
-  station: "TBD area",
-  ct: "0s",
-  status: "Needs Review",
-  risk: "Low",
-  mtm: "TBD",
-  tooling: "TBD",
-  material: "TBD",
-};
+const processTimePage = globalThis.MciProcessTimePage.createProcessTimePage({
+  sopMacroSteps,
+  aiPanel: globalThis.MciAiPanel,
+  escapeHtml,
+  formatStepId,
+  getMicroReviewState,
+  getSelectedMacroStep: () => getMacroStep(),
+  setSelectedMacroStepId: (stepId) => {
+    selectedMacroStepId = stepId;
+  },
+  setSelectedStepId: (stepId) => {
+    selectedStepId = stepId;
+  },
+  getMicroChangeStats: () => microChangeStats,
+  renderProcessTime: () => renderStage("steps"),
+});
+const workflowTable = globalThis.MciWorkflowTable.createWorkflowTable({
+  steps,
+  escapeHtml,
+  formatStepId,
+  formatStepNumber,
+  getMacroStep,
+  getMicroPt,
+  getActualPt,
+  getMicroAutomation,
+  hasMicroFlag,
+  getSelectedStepId: () => selectedStepId,
+  setSelectedStepId: (stepId) => {
+    selectedStepId = stepId;
+  },
+  setSelectedMacroStepId: (stepId) => {
+    selectedMacroStepId = stepId;
+  },
+  getDraggedSopStepId: () => draggedSopStepId,
+  setDraggedSopStepId: (stepId) => {
+    draggedSopStepId = stepId;
+  },
+  getDraggedMicroStep: () => draggedMicroStep,
+  setDraggedMicroStep: (microStep) => {
+    draggedMicroStep = microStep;
+  },
+  getCurrentStageKey: () => currentStageKey,
+  renderParse: renderParsePanel,
+  renderSteps: () => renderStage(getStepTableStageKey()),
+  renderAI,
+  scrollSelectedSopStepIntoView,
+  moveSopStep,
+  swapMicroSteps,
+  updateWorkflowFromField,
+  updateMicroStepDraftFromField,
+  updateMicroStepFromField,
+  deleteMicroStep,
+  confirmMicroStep,
+});
+const ctCalculationPage = globalThis.MciCtCalculationPage.createCtCalculationPage({
+  ctCalculatorState,
+  aiPanel: globalThis.MciAiPanel,
+  sopMacroSteps,
+  escapeHtml,
+  formatStepId,
+  formatProcessStepLabel,
+  getMicroPt,
+  getActualPt,
+  getMicroAutomation,
+  getCtInputMode: () => ctInputMode,
+  setCtInputMode: (mode) => {
+    ctInputMode = mode;
+  },
+  getSearchQuery: () => refs.search?.value || "",
+  getTwinCanvas: () => refs.twinCanvas,
+  renderPanel: () => renderCtPanel(),
+});
+const expandedStations = {};
+const expandedStationWorkflows = {};
+const stationPage = globalThis.MciStationPage.createStationPage({
+  stationPlanMeta,
+  expandedStations,
+  expandedStationWorkflows,
+  escapeHtml,
+  formatStepId,
+  stationFieldLabels,
+  stationTraceLog,
+  getActiveStationPlanId: () => activeStationPlanId,
+  getSelectedStationId: () => selectedStationId,
+  getStationViewMode: () => stationViewMode,
+  setSelectedStationId: (stationId) => {
+    selectedStationId = stationId;
+  },
+  setStationViewMode,
+  syncStationAutomationGrouping,
+  getActiveStations,
+  getStationPlanSummary,
+  getStationDraft,
+  getStationKpiRows,
+  getLineKpiSummary,
+  getTargetCt: () => Number(ctCalculatorState.targetCt) || 58,
+  getStationMicroSteps,
+  getMacroStep,
+  getStepById,
+  getMicroAutomation,
+  getMicroPt,
+  getActualPt,
+  stationSnapshot,
+  applyStationSnapshot,
+  updateStationTiming,
+  selectStationPlan,
+  renderStationStage: () => renderStage("station"),
+  showToast,
+});
+const layoutPage = globalThis.MciLayoutPage.createLayoutPage({
+  escapeHtml,
+  formatStepId,
+  stationStateLabel,
+  getActiveStations,
+  getSelectedStationId: () => selectedStationId,
+  setSelectedStationId: (stationId) => {
+    selectedStationId = stationId;
+  },
+  syncStationAutomationGrouping,
+  getLineKpiSummary,
+  getTargetCt: () => Number(ctCalculatorState.targetCt) || 58,
+  getMacroStep,
+  getStepById,
+  renderMappingStage: () => renderStage("mapping"),
+  renderMappingPanel,
+});
+const miOutputPage = globalThis.MciMiOutputPage.createMiOutputPage({
+  sopMacroSteps,
+  stationMaterialLists,
+  escapeHtml,
+  formatStepId,
+  stationStateLabel,
+  getActiveStations,
+  getTargetCt: () => Number(ctCalculatorState.targetCt) || 58,
+  getMacroStepById,
+  getAiStepById,
+  renderOutputStage: () => renderStage("output"),
+  showToast,
+});
 
 function setText(node, value) {
   if (node) node.textContent = value;
@@ -1412,7 +1673,7 @@ function formatProcessStepLabel(macro) {
 }
 
 function getMacroStep(id = selectedMacroStepId) {
-  return sopMacroSteps.find((step) => step.id === id) || sopMacroSteps[0];
+  return sopMacroSteps.find((step) => step.id === id) || sopMacroSteps[0] || null;
 }
 
 function getMicroTotal(macroStep) {
@@ -1484,6 +1745,15 @@ function updateMicroStepFromField(field) {
   macro.microSteps[index][fieldIndex] = value;
   selectedMacroStepId = macro.id;
   renderStage(getStepTableStageKey());
+}
+
+function updateMicroStepDraftFromField(field) {
+  const macro = getMacroStep(field.dataset.macroId || selectedMacroStepId);
+  const index = Number(field.dataset.microIndex);
+  const fieldIndex = Number(field.dataset.microField);
+  if (!macro.microSteps[index] || !Number.isFinite(fieldIndex)) return;
+  macro.microSteps[index][fieldIndex] = fieldIndex === 2 || fieldIndex === 4 ? Number(field.value) || 0 : field.value;
+  selectedMacroStepId = macro.id;
 }
 
 function updateStationStepRisk(field) {
@@ -1617,13 +1887,52 @@ function getActualPt(microStep, microIndex) {
   return microStep[4] || getMicroPt(microStep, microIndex);
 }
 
+function exportStepsToExcel() {
+  // Build a CSV of the Page 03 step table. CSV opens natively in Excel; UTF-8 BOM keeps Chinese readable.
+  const headers = ["SOP Workflow", "Step", "Automation", "Step Description", "Part", "Theoretical PT (secs)", "Actual PT (secs)"];
+  const rows = [headers];
+
+  steps.forEach((step) => {
+    const macro = getMacroStep(step.id);
+    const microSteps = macro?.microSteps?.length ? macro.microSteps : [];
+    microSteps.forEach((microStep, index) => {
+      rows.push([
+        index === 0 ? step.process : "",
+        `${formatStepId(step.id)}.${String(index + 1).padStart(2, "0")}`,
+        getMicroAutomation(microStep),
+        microStep[0] || "",
+        step.material || "",
+        getMicroPt(microStep, index),
+        getActualPt(microStep, index),
+      ]);
+    });
+  });
+
+  if (rows.length === 1) {
+    showToast("No parsed steps to export yet. Run Parse first.");
+    return;
+  }
+
+  const escapeCsv = (value) => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = "﻿" + rows.map((row) => row.map(escapeCsv).join(",")).join("\r\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "process-steps.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${rows.length - 1} step row(s) to Excel`);
+}
+
 function getVolumeTargetCt() {
-  const dailyVolume = Math.max(1, Number(ctCalculatorState.dailyVolume) || 1);
-  const shiftCount = Math.max(1, Number(ctCalculatorState.shiftCount) || 1);
-  const shiftHours = Math.max(0.1, Number(ctCalculatorState.shiftHours) || 0.1);
-  const oeeRatio = Math.max(0.01, Math.min(1, (Number(ctCalculatorState.oee) || 1) / 100));
-  const availableSeconds = shiftCount * shiftHours * 3600 * oeeRatio;
-  return availableSeconds / dailyVolume;
+  return ctCalculationPage.getVolumeTargetCt();
 }
 
 function microMatchesFilter(microStep) {
@@ -1681,41 +1990,7 @@ function getNextSopStepId() {
   return String(maxId + 10).padStart(3, "0");
 }
 
-function resetSopStepDraft() {
-  sopStepDraft.process = "";
-  sopStepDraft.detail = "";
-  sopStepDraft.station = "TBD area";
-  sopStepDraft.ct = "0s";
-  sopStepDraft.status = "Needs Review";
-  sopStepDraft.risk = "Low";
-  sopStepDraft.mtm = "TBD";
-  sopStepDraft.tooling = "TBD";
-  sopStepDraft.material = "TBD";
-}
-
-function openSopStepDraft() {
-  sopAddPanelOpen = true;
-  renderParsePanel();
-}
-
-function closeSopStepDraft() {
-  sopAddPanelOpen = false;
-  resetSopStepDraft();
-  renderParsePanel();
-}
-
-function updateSopStepDraft(field) {
-  const key = field.dataset.draftField || field.dataset.field;
-  if (key) sopStepDraft[key] = field.value;
-}
-
-function syncSopStepDraftFromForm() {
-  refs.evidenceList?.querySelectorAll("[data-draft-field]").forEach((field) => updateSopStepDraft(field));
-}
-
-function generateSopStepFromDraft(event) {
-  event?.target?.blur();
-  syncSopStepDraftFromForm();
+function generateSopStepFromDraft(sopStepDraft) {
   const id = getNextSopStepId();
   const process = sopStepDraft.process.trim() || "New manual SOP step";
   const detail = sopStepDraft.detail.trim() || "Describe the added assembly action, method, and required evidence.";
@@ -1736,8 +2011,6 @@ function generateSopStepFromDraft(event) {
     evidence: ["Manual SOP flow edit"],
   });
   selectedStepId = id;
-  sopAddPanelOpen = false;
-  resetSopStepDraft();
   renderStage("parse");
   showToast(`Step ${formatStepId(id)} added to SOP flow`);
 }
@@ -1842,23 +2115,7 @@ function setStationViewMode(mode) {
 }
 
 function renderStationPlanCards() {
-  return `
-    <div class="station-plan-grid">
-      ${Object.keys(stationPlanMeta)
-        .map((planId) => {
-          const summary = getStationPlanSummary(planId);
-          return `
-            <button class="station-plan-card ${planId === activeStationPlanId ? "active" : ""}" type="button" data-action="select-station-plan" data-plan-id="${planId}">
-              <span>${summary.name}</span>
-              <strong>${summary.label}</strong>
-              <small>${summary.description}</small>
-              <em>${summary.lbe.toFixed(1)}% LBE · ${summary.stations.length} stations · ${summary.totalHc.toFixed(1)} HC</em>
-            </button>
-          `;
-        })
-        .join("")}
-    </div>
-  `;
+  return stationPage.renderPlanCards();
 }
 
 function getStationKpiRows() {
@@ -1906,137 +2163,15 @@ const defaultTwinCanvas = `
 `;
 
 function renderInputCanvas() {
-  const uploadSlots = [
-    {
-      title: "Historical MI Input",
-      detail: "Upload previous MI package for process structure, work instructions, images and CTQ references.",
-      action: "Upload Historical MI",
-      accept: ".ppt,.pptx,.pdf,.xlsx,.xls,.csv,.zip",
-      status: "Loaded sample",
-      source: "Historical MI",
-    },
-    {
-      title: "Assembly Video",
-      detail: "Upload assembly operation videos so AI can extract actions, parts, notes and gaps.",
-      action: "Upload Assembly Video",
-      accept: ".mp4,.mov,.avi,.mkv,.webm",
-      status: "Loaded sample",
-      source: "Assembly Video",
-    },
-    {
-      title: "MTM / History Input",
-      detail: "Upload MTM timing, previous line balance or historical station arrangement.",
-      action: "Upload MTM / History",
-      accept: ".xlsx,.xls,.csv,.json",
-      status: "Optional but useful",
-      source: "MTM Database",
-    },
-  ];
-
-  return `
-    <div class="input-intake-board">
-      <section class="input-intake-hero">
-        <div>
-          <span class="input-kicker">Input Intake Board</span>
-          <h3>Upload inputs to generate the new SOP draft</h3>
-          <p>This is the input entry point. Upload historical MI, assembly videos, and MTM / historical layout first; the next page shows the AI-generated SOP.</p>
-        </div>
-        <div class="input-start-card">
-          <strong>Start Parsing</strong>
-          <span>Use uploaded files to generate Page 02 SOP draft</span>
-          <button type="button">Parse Uploaded Inputs</button>
-        </div>
-      </section>
-
-      <section class="upload-slot-grid">
-        ${uploadSlots
-          .map(
-            (slot, index) => {
-              const source = inputSources.find((item) => item.source === slot.source);
-              return `
-              <article class="upload-slot-card ${source?.tone || ""}">
-                <div>
-                  <b>${slot.title}</b>
-                  <span>${slot.detail}</span>
-                </div>
-                <label class="upload-action">
-                  <input type="file" accept="${slot.accept}" data-upload-slot="${index}" />
-                  <span>${slot.action}</span>
-                </label>
-                <small>${slot.status}${source?.issue ? ` · ${source.issue}` : ""}</small>
-              </article>
-            `;
-            },
-          )
-          .join("")}
-      </section>
-
-      <section class="upload-note-strip">
-        <span>Optional: Human Rule List and Mapping Table can be added later. Missing mapping will stay as review items downstream.</span>
-      </section>
-    </div>
-  `;
+  return inputPage.render();
 }
 
 function renderSopFlowCanvas() {
-  return `
-  <div class="sop-flow-board">
-    <div class="sop-step-track">
-      ${steps
-          .map((step, index) => {
-            return `
-              <article class="sop-step-card ${getSopStepTone(step)} ${step.id === selectedStepId ? "active" : ""}" data-step-id="${step.id}">
-                <div class="sop-step-card-head" draggable="true" data-step-id="${step.id}">
-                  <button class="sop-drag-handle" type="button" title="Drag to reorder">DRAG</button>
-                  <small>Step ${formatStepId(step.id)}</small>
-                  <button class="sop-delete-step" type="button" data-action="delete-sop-step" data-step-id="${step.id}" title="Delete step">Delete</button>
-            </div>
-                <div class="sop-step-source"><b>Part area</b><span>${escapeHtml(step.station)}</span></div>
-                <label class="sop-field-label">Process Workflow</label>
-                <input class="sop-step-input sop-step-title" data-step-id="${step.id}" data-field="process" value="${escapeHtml(step.process)}" />
-                <label class="sop-field-label">Workflow Description</label>
-                <textarea class="sop-step-input" data-step-id="${step.id}" data-field="detail" rows="3">${escapeHtml(step.detail)}</textarea>
-                <div class="sop-step-meta-edit">
-                  <label>Part Area<input class="sop-step-input" data-step-id="${step.id}" data-field="station" value="${escapeHtml(step.station)}" /></label>
-                  <label>Review<select class="sop-step-input" data-step-id="${step.id}" data-field="status">
-                    ${["Extracted", "Needs Review", "Confirmed"].map((status) => `<option value="${status}" ${getSopReviewState(step) === status ? "selected" : ""}>${status}</option>`).join("")}
-                  </select></label>
-                </div>
-              </article>
-            `;
-          })
-        .join("")}
-    </div>
-  </div>
-`;
+  return processStepPage.render();
 }
 
 function renderStepTimingCanvas() {
-  const selectedMacro = getMacroStep();
-
-  return `
-    <div class="timing-board">
-      <section class="area-step-list sop-action-list">
-        <div class="area-step-list-head">
-          <b>SOP Actions</b>
-          <span>${sopMacroSteps.length} actions</span>
-      </div>
-        <div class="area-step-grid">
-        ${sopMacroSteps
-          .map(
-              (step) => `
-                <button class="area-step-card ${step.id === selectedMacro.id ? "active" : ""}" data-sop-id="${step.id}">
-                  <span>Step ${formatStepId(step.id)}</span>
-                  <b>${escapeHtml(step.title)}</b>
-                  <i>${step.microSteps.length} micro · ${step.microSteps.filter((item) => getMicroReviewState(item[3]) === "Edit").length} edit · ${escapeHtml(step.station)}</i>
-              </button>
-            `,
-          )
-          .join("")}
-      </div>
-      </section>
-    </div>
-  `;
+  return processTimePage.render();
 }
 
 function renderHumanGateCanvas() {
@@ -2068,376 +2203,177 @@ function renderHumanGateCanvas() {
 }
 
 function renderCtCanvas() {
-  const totalProcessTime = 354;
-  const targetCt = Number(ctCalculatorState.targetCt) || 1;
-  const totalHc = Number(ctCalculatorState.totalHc) || 1;
-  const calculatedHc = Math.ceil(totalProcessTime / targetCt);
-  const calculatedCt = totalProcessTime / totalHc;
-  const volumeTargetCt = getVolumeTargetCt();
-  return `
-    <div class="ct-board">
-      <section class="ct-simple-calculator">
-        <div class="ct-simple-head">
-          <div>
-            <b>Calculator</b>
-            <span>Use CT, HC, or volume assumptions to calculate the balancing target.</span>
-          </div>
-          <em>Total process time ${totalProcessTime}s</em>
-        </div>
-        <div class="ct-method-stack">
-          <section class="ct-method-section">
-            <div class="ct-method-title"><b>Method 1</b><span>Use process time to calculate CT or HC</span></div>
-            <div class="ct-mode-grid">
-              <article class="ct-mode-card ${ctInputMode === "ct" ? "active" : ""}">
-                <label><span>Input Target CT (secs)</span><input class="ct-calc-input" type="number" min="1" step="1" data-ct-field="targetCt" value="${ctCalculatorState.targetCt}" /></label>
-                <div class="ct-result-box"><span>Generated Total HC</span><strong data-ct-result="hc">${calculatedHc.toFixed(1)}</strong><small data-ct-formula="hc">${totalProcessTime}s / ${targetCt}s</small></div>
-              </article>
-              <article class="ct-mode-card ${ctInputMode === "hc" ? "active" : ""}">
-                <label><span>Input Total HC</span><input class="ct-calc-input" type="number" min="1" step="1" data-ct-field="totalHc" value="${ctCalculatorState.totalHc}" /></label>
-                <div class="ct-result-box"><span>Generated CT (secs)</span><strong data-ct-result="ct">${calculatedCt.toFixed(1)}</strong><small data-ct-formula="ct">${totalProcessTime}s / ${totalHc} HC</small></div>
-              </article>
-            </div>
-      </section>
-          <section class="ct-method-section">
-            <div class="ct-method-title"><b>Method 2</b><span>Use customer volume assumptions to generate target CT</span></div>
-            <article class="ct-mode-card ct-volume-card ${ctInputMode === "volume" ? "active" : ""}">
-              <div class="ct-volume-inputs">
-                <label><span>Daily Volume</span><input class="ct-calc-input ct-volume-input" type="number" min="1" step="1" data-ct-field="dailyVolume" value="${ctCalculatorState.dailyVolume}" /></label>
-                <label><span>Shift / Hours</span><div class="ct-shift-pair"><input class="ct-calc-input ct-volume-input" type="number" min="1" step="1" data-ct-field="shiftCount" value="${ctCalculatorState.shiftCount}" /><b>×</b><input class="ct-calc-input ct-volume-input" type="number" min="0.1" step="0.5" data-ct-field="shiftHours" value="${ctCalculatorState.shiftHours}" /></div></label>
-                <label><span>OEE (%)</span><input class="ct-calc-input ct-volume-input" type="number" min="1" max="100" step="1" data-ct-field="oee" value="${ctCalculatorState.oee}" /></label>
-              </div>
-              <div class="ct-result-box"><span>Generated Target CT (secs)</span><strong data-ct-result="volumeCt">${volumeTargetCt.toFixed(1)}</strong><small data-ct-formula="volumeCt">${ctCalculatorState.shiftCount} × ${ctCalculatorState.shiftHours}h × 3600 × ${ctCalculatorState.oee}% / ${ctCalculatorState.dailyVolume}</small></div>
-            </article>
-          </section>
-        </div>
-        <div class="ct-simple-formula">
-          <span>Formula</span>
-          <b>Total HC = Total Process Time / CT</b>
-          <b>CT = Total Process Time / Total HC</b>
-          <b>CT = Available Production Time × OEE / Daily Volume</b>
-        </div>
-      </section>
-    </div>
-  `;
+  return ctCalculationPage.renderCanvas();
 }
 
 function renderStationWorkflowDetails(station) {
-  const rows = station.steps.flatMap((stepId) => {
-    const macro = getMacroStep(stepId);
-    const aiStep = getStepById(stepId);
-    return getStationMicroSteps(station, stepId).map(({ microStep, index }) => ({
-      stepId,
-      macro,
-      aiStep,
-      microStep,
-      index,
-    }));
-  });
-
-  return `
-    <section class="station-workflow-details">
-      <div class="station-workflow-expanded">
-        <div class="station-workflow-head"><span>Step</span><span>Automation</span><span>Step Description</span><span>Part</span><span>Theoretical PT (secs)</span><span>Actual PT (secs)</span></div>
-        ${
-          rows.length
-            ? rows
-                .map(({ stepId, macro, aiStep, microStep, index }) => {
-                  const part = aiStep?.material || macro?.station || "TBD";
-                  return `
-                    <div class="station-workflow-step">
-                      <span><b>${formatStepId(stepId)}.${String(index + 1).padStart(2, "0")}</b></span>
-                      <span><em class="automation-chip ${getMicroAutomation(microStep) === "A" ? "auto" : ""}">${getMicroAutomation(microStep)}</em></span>
-                      <span>${escapeHtml(microStep[0])}</span>
-                      <span>${escapeHtml(part)}</span>
-                      <span>${getMicroPt(microStep, index)}</span>
-                      <span>${getActualPt(microStep, index)}</span>
-                    </div>
-                  `;
-                })
-                .join("")
-            : `<div class="station-workflow-empty">No detailed steps assigned yet.</div>`
-        }
-      </div>
-    </section>
-  `;
+  return stationPage.renderWorkflowDetails(station);
 }
 
-function renderStationCanvas() {
-  syncStationAutomationGrouping();
-  const stations = getActiveStations();
-  const activeSummary = getStationPlanSummary(activeStationPlanId);
-
-  return `
-    <div class="station-board">
-      <section class="station-edit-workspace">
-        ${renderStationPlanCards()}
-        <div class="station-line-balance-summary">
-          <span>Line Balance Efficiency</span>
-          <strong>${activeSummary.lbe.toFixed(1)}%</strong>
-        </div>
-        <div class="station-table-toolbar">
-          <button class="station-table-action primary" type="button" data-action="add-station">+ Add Station</button>
-          <select class="station-delete-select" data-action="select-delete-station">
-            <option value="">Select station to delete</option>
-            ${stations.map((station) => `<option value="${station.id}" ${selectedStationId === station.id ? "selected" : ""} ${station.automation ? "disabled" : ""}>${station.id} · ${station.note}</option>`).join("")}
-          </select>
-          <button class="station-table-action danger" type="button" data-action="delete-station" ${selectedStationId ? "" : "disabled"}>Delete Station</button>
-        </div>
-        <div class="station-edit-head"><span>Station</span><span>Automation</span><span>Assigned steps</span><span>HC</span><span>Status / Trace</span></div>
-        ${stations
-          .map(
-            (station) => {
-              const disabled = station.editing ? "" : "disabled";
-              const selected = station.id === selectedStationId;
-              const stateClass = selected ? station.state : "";
-              const isStationOpen = Boolean(expandedStations[station.id]);
-              return `
-              <section class="station-edit-row ${stateClass} ${station.automation ? "automation" : ""} ${station.override ? "override" : ""} ${station.editing ? "editing" : ""} ${selected ? "active" : ""}" data-station-id="${station.id}">
-                <div class="station-code-cell">
-                  <button class="station-expand-toggle" type="button" data-station-id="${station.id}" aria-label="Toggle station details">${isStationOpen ? "−" : "+"}</button>
-                <input class="station-field station-code-field" data-field="id" value="${station.id}" ${disabled} />
-                </div>
-                <div class="station-automation-cell"><span class="automation-chip ${station.automation ? "auto" : ""}">${station.automation ? "A" : "M"}</span></div>
-                <textarea class="station-field" rows="2" data-field="steps" ${disabled}>${station.steps.join(", ")}</textarea>
-                <input class="station-field station-hc-field" data-field="hc" value="${station.hc}" ${disabled} />
-                <div class="station-edit-actions">
-                  <div class="station-action-row">
-                    <button class="station-action" data-action="edit" type="button">${station.editing ? "Editing" : "Edit"}</button>
-                    <button class="station-action submit" data-action="submit" type="button">Confirm</button>
-                  </div>
-                </div>
-              </section>
-              ${isStationOpen ? renderStationWorkflowDetails(station) : ""}
-            `;
-            },
-          )
-          .join("")}
-      </section>
-      <div class="station-edit-footer"><span>Station time is recalculated from locked step time after assignment changes.</span><b>Total HC ${activeSummary.totalHc.toFixed(1)}</b></div>
-        </div>
-  `;
-}
-
-function renderStationKpiCanvas() {
-  const summary = getStationPlanSummary(activeStationPlanId);
-  const targetCt = Number(ctCalculatorState.targetCt) || 58;
-  const rows = getStationKpiRows();
-  const maxCt = Math.max(targetCt, ...rows.map(({ ct }) => ct));
+// Compact card for compare mode — KPIs + strategy + pick button (no full station detail).
+// Full view reusing the legacy station look: Line Balance Efficiency + CT bar chart + station list.
+function renderAiPlanFullView(plan) {
+  const targetCt = plan.targetCt || 1;
+  const sts = plan.stations.map((s) => s.st);
+  const maxCt = Math.max(targetCt, ...sts, 1);
   const chartMax = Math.max(10, Math.ceil((maxCt * 1.15) / 10) * 10);
   const targetLineBottom = Math.min(100, (targetCt / chartMax) * 100);
   const yTicks = [chartMax, Math.round(chartMax * 0.75), Math.round(chartMax * 0.5), Math.round(chartMax * 0.25), 0];
 
+  const chart = `
+    <div class="station-ct-chart-card">
+      <div class="station-ct-chart-head">
+        <div><b>Station CT Performance</b><span>X: station · Y: CT (secs)</span></div>
+        <em>Target CT ${targetCt}s</em>
+      </div>
+      <div class="station-ct-chart">
+        <div class="station-ct-y-axis">${yTicks.map((t) => `<span>${t}s</span>`).join("")}</div>
+        <div class="station-ct-plot" style="--target-line-bottom:${targetLineBottom}%;">
+          <div class="station-ct-target-line"><span>Target CT ${targetCt}s</span></div>
+          ${plan.stations
+            .map((s) => {
+              const height = Math.max(2, Math.min(100, (s.st / chartMax) * 100));
+              return `
+                <article class="station-ct-bar ${s.overTarget ? "over-target" : ""}" style="--bar-height:${height}%;">
+                  <div class="station-ct-bar-track"><i></i></div>
+                  <strong>${s.st.toFixed(0)}s</strong>
+                  <span>ST${String(s.stationNo).padStart(2, "0")}</span>
+                </article>`;
+            })
+            .join("")}
+        </div>
+      </div>
+    </div>`;
+
+  const rows = plan.stations
+    .map((s) => {
+      const load = targetCt > 0 ? Math.round((s.st / targetCt) * 100) : 0;
+      const status = s.overTarget ? "Over CT" : "Within CT";
+      const chip = s.overTarget ? "risk-high" : "risk-low";
+      return `
+        <tr class="${s.overTarget ? "station-row-over" : ""}">
+          <td><b>ST${String(s.stationNo).padStart(2, "0")}</b></td>
+          <td><span class="automation-chip ${s.automation === "A" ? "auto" : ""}">${s.automation}</span></td>
+          <td class="process-cell"><strong>${escapeHtml(s.name)}</strong><small>${s.stepNos.join(" · ")}</small></td>
+          <td><strong class="time-cell">${s.st}s</strong></td>
+          <td>${load}%</td>
+          <td><span class="chip ${chip}">${status}</span></td>
+        </tr>`;
+    })
+    .join("");
+
   return `
-    <div class="station-board station-kpi-board">
-      <section class="station-edit-workspace">
-        ${renderStationPlanCards()}
-        <div class="station-line-balance-summary">
-          <span>KPI Performance · ${summary.name}</span>
-          <strong>${summary.lbe.toFixed(1)}%</strong>
-        </div>
-        <div class="station-ct-chart-card">
-          <div class="station-ct-chart-head">
-            <div>
-              <b>Station CT Performance</b>
-              <span>X-axis: station · Y-axis: CT (secs)</span>
-            </div>
-            <em>Target CT ${targetCt}s</em>
-          </div>
-          <div class="station-ct-chart">
-            <div class="station-ct-y-axis">
-              ${yTicks.map((tick) => `<span>${tick}s</span>`).join("")}
-            </div>
-            <div class="station-ct-plot" style="--target-line-bottom:${targetLineBottom}%;">
-              <div class="station-ct-target-line"><span>Target CT ${targetCt}s</span></div>
-              ${rows
-                .map(({ station, ct, ctOverTarget }) => {
-                  const height = Math.max(2, Math.min(100, (ct / chartMax) * 100));
-                  return `
-                    <article class="station-ct-bar ${ctOverTarget ? "over-target" : ""}" style="--bar-height:${height}%;">
-                      <div class="station-ct-bar-track">
-                        <i></i>
-                      </div>
-                      <strong>${ct.toFixed(0)}s</strong>
-                      <span>${escapeHtml(station.id)}</span>
-                    </article>
-                  `;
-                })
-                .join("")}
-            </div>
-          </div>
-        </div>
-      </section>
+    <div class="station-line-balance-summary">
+      <span>Line Balance Rate · ${escapeHtml(plan.name)}</span>
+      <strong>${plan.lbr}%</strong>
     </div>
-  `;
+    ${chart}
+    <table class="ai-plan-station-table">
+      <thead><tr><th>Station</th><th>Auto</th><th>Work content / steps</th><th>ST</th><th>Load</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
-function getStationLayoutMeta(station) {
-  if (!station.layoutWidth) station.layoutWidth = station.automation ? 2.4 : 0.9;
-  if (!station.layoutDepth) station.layoutDepth = station.automation ? 1.4 : 0.9;
-  if (!station.operatorSide) station.operatorSide = station.automation ? "Service side" : "Inside U";
-  return {
-    width: Number(station.layoutWidth) || 0.9,
-    depth: Number(station.layoutDepth) || 0.9,
-    operatorSide: station.operatorSide,
-  };
+function renderAiStationPlanCanvas() {
+  if (stationPlanState.status === "generating") {
+    return `<div class="ai-station-loading"><span class="station-spinner"></span> ${escapeHtml(stationPlanState.message || "Generating station plan…")}</div>`;
+  }
+  if (stationPlanState.status === "failed") {
+    return `<div class="ai-station-failed">Station generation failed: ${escapeHtml(stationPlanState.message || "")}</div>`;
+  }
+  const plans = stationPlanState.plans || [];
+  if (!plans.length) return `<div class="ai-station-loading">No station plan yet.</div>`;
+
+  // Recommended = highest LBR (ties → first).
+  const recommendedIndex = plans.reduce((best, p, i) => (p.lbr > plans[best].lbr ? i : best), 0);
+  const selIdx = stationPlanState.selectedPlanIndex;
+
+  const locked = selIdx != null && plans[selIdx];
+  const activeIdx = locked ? selIdx : recommendedIndex;
+
+  // Plan selector cards reuse the legacy .station-plan-card look. Compare mode = both full;
+  // locked mode = selected stays, the other folds into a thin switchable bar.
+  const cards = plans
+    .map((p, i) => {
+      const isActive = i === activeIdx;
+      const folded = locked && !isActive;
+      const stat = `${p.lbr}% LBE · ${p.stationCount} stations · ${p.stationCount.toFixed(1)} HC`;
+      if (folded) {
+        return `<button class="station-plan-card folded" type="button" data-action="select-station-plan-option" data-plan-index="${i}"><span>${escapeHtml(p.name)} · Alternative (folded)</span><em>${stat} — Switch to this</em></button>`;
+      }
+      return `<button class="station-plan-card ${isActive ? "active" : ""}" type="button" data-action="select-station-plan-option" data-plan-index="${i}">
+        <span>${escapeHtml(p.name)}${i === recommendedIndex ? " · Recommended" : ""}</span>
+        <strong>${locked && isActive ? "✓ Selected" : "Tap to select"}</strong>
+        <small>${escapeHtml(p.strategy || "")}</small>
+        <em>${stat}</em>
+      </button>`;
+    })
+    .join("");
+
+  const bar = locked
+    ? `<div class="ai-plan-lockbar"><span>✓ Locked in <b>${escapeHtml(plans[activeIdx].name)}</b> · LBR ${plans[activeIdx].lbr}%</span><button class="ai-plan-compare-btn" type="button" data-action="compare-station-plans">Compare plans again</button></div>`
+    : `<div class="ai-plan-compare-hint">AI generated ${plans.length} balanced plans — click a plan card to lock it in. The other folds into an alternative you can switch back to.</div>`;
+
+  return `
+    <div class="station-board">
+      <section class="station-edit-workspace">
+        <div class="station-plan-grid">${cards}</div>
+        ${bar}
+        ${renderAiPlanFullView(plans[activeIdx])}
+      </section>
+    </div>`;
 }
 
-function getLayoutStations() {
-  syncStationAutomationGrouping();
-  return getActiveStations().map((station) => {
-    const meta = getStationLayoutMeta(station);
-    return {
-      station,
-      ...meta,
-      area: meta.width * meta.depth,
-    };
+function bindAiStationCanvas() {
+  refs.twinCanvas?.querySelectorAll("[data-action='select-station-plan-option']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      stationPlanState.selectedPlanIndex = Number(btn.dataset.planIndex);
+      renderStage("station");
+      showToast(`${stationPlanState.plans[stationPlanState.selectedPlanIndex]?.name || "Plan"} locked in`);
+    });
+  });
+  refs.twinCanvas?.querySelector("[data-action='compare-station-plans']")?.addEventListener("click", () => {
+    stationPlanState.selectedPlanIndex = null;
+    renderStage("station");
   });
 }
 
-function renderLayoutStationCard({ station, width, depth, area }, index) {
-  const scale = 58;
-  const cardWidth = Math.max(116, Math.min(190, width * scale));
-  const cardHeight = Math.max(78, Math.min(132, depth * scale));
-  const riskClass = station.state === "over" ? "risk" : "";
-  return `
-    <article class="layout-station-card ${station.automation ? "auto" : ""} ${riskClass}" style="--station-card-w: ${cardWidth}px; --station-card-h: ${cardHeight}px;">
-      <header>
-        <b>${escapeHtml(station.id)}</b>
-        <span class="automation-chip ${station.automation ? "auto" : ""}">${station.automation ? "A" : "M"}</span>
-      </header>
-      <strong>${escapeHtml(station.note)}</strong>
-      <small>${width.toFixed(1)}m x ${depth.toFixed(1)}m · ${area.toFixed(1)}m²</small>
-      <em>${index + 1}</em>
-    </article>
-  `;
+const STATION_EMPTY_PROMPT = `<div class="ai-station-loading">No station plan yet. Go to Page 04 (CT Calculation), set a target CT, then click "Continue to Station Balancing Workspace" to generate Plan A / Plan B.</div>`;
+
+function renderStationCanvas() {
+  // Station view is fully AI-driven. No hardcoded mock stations: show the AI plan when
+  // generated, otherwise an empty prompt that points back to Page 04.
+  if (stationPlanState.status !== "idle") return renderAiStationPlanCanvas();
+  return STATION_EMPTY_PROMPT;
 }
 
-function getLayoutStationGeometry({ station, width, depth }, index, bottomCount) {
-  const squareSize = 86;
-  const left = 104;
-  const topY = 74;
-  const positions = [
-    { x: left, y: topY + squareSize * 2 },
-    { x: left + squareSize, y: topY + squareSize * 2 },
-    { x: left + squareSize * 2, y: topY + squareSize * 2 },
-    { x: left + squareSize * 3, y: topY + squareSize },
-    { x: left + squareSize * 2, y: topY },
-    { x: left + squareSize, y: topY },
-  ];
-  const position = positions[index] || positions[positions.length - 1];
-  const blockWidth = squareSize;
-  const blockHeight = squareSize;
-  return {
-    x: position.x,
-    y: position.y,
-    blockWidth,
-    blockHeight,
-    centerX: position.x + blockWidth / 2,
-    centerY: position.y + blockHeight / 2,
-  };
+function renderStationKpiCanvas() {
+  if (stationPlanState.status !== "idle") return renderAiStationPlanCanvas();
+  return STATION_EMPTY_PROMPT;
 }
 
-function getLayoutPoint(index, total, bottomCount) {
-  const cellW = 96;
-  const cellH = 58;
-  const left = 82;
-  const topY = 28;
-  const bottomY = 344;
-  const sideIndex = bottomCount;
-  const sideX = left + bottomCount * cellW;
-  if (index < bottomCount) return { x: left + index * cellW + cellW / 2, y: bottomY - 64 };
-  if (index === sideIndex) return { x: sideX - 38, y: (topY + cellH + bottomY) / 2 };
-  const topVisualIndex = bottomCount - 1 - (index - sideIndex - 1);
-  return { x: left + Math.max(0, topVisualIndex) * cellW + cellW / 2, y: topY + cellH + 64 };
+function getStationLayoutMeta(station) {
+  return layoutPage.getStationLayoutMeta(station);
 }
 
-function renderLayoutOperator({ station }, index, total, bottomCount) {
-  if (station.automation) return "";
-  const geometry = getLayoutStationGeometry({ station, width: station.layoutWidth || 0.9, depth: station.layoutDepth || 0.9 }, index, bottomCount);
-  const operatorScale = 0.46;
-  const bottomRow = index <= 2;
-  const topRow = index >= 4;
-  const x = bottomRow
-    ? geometry.centerX
-    : topRow
-      ? geometry.centerX
-      : geometry.x - 10;
-  const y = bottomRow
-    ? geometry.y - 7
-    : topRow
-      ? geometry.y + geometry.blockHeight + 18
-      : geometry.centerY + 6;
-            return `
-    <g class="layout-operator-icon" transform="translate(${x} ${y}) scale(${operatorScale})">
-      <circle cx="0" cy="-12" r="8"></circle>
-      <path d="M -12 2 Q 0 -8 12 2"></path>
-      <path d="M -10 10 Q 0 20 10 10"></path>
-      <path d="M -15 5 L -5 12 M 15 5 L 5 12"></path>
-    </g>
-  `;
-}
-
-function renderLayoutStationBlock({ station, width, depth, area }, index, total, bottomCount) {
-  const { x, y, blockWidth, blockHeight, centerX } = getLayoutStationGeometry({ station, width, depth }, index, bottomCount);
-  const stateClass = station.automation ? "auto" : station.state === "over" ? "risk" : "manual";
-  const selectedClass = station.id === selectedStationId ? "active" : "";
-
-  return `
-    <g class="layout-svg-station ${stateClass} ${selectedClass}" data-station-id="${escapeHtml(station.id)}" role="button" tabindex="0" aria-label="Show ${escapeHtml(station.id)} layout station information">
-      <rect x="${x}" y="${y}" width="${blockWidth}" height="${blockHeight}" rx="0"></rect>
-      <text x="${centerX}" y="${y + blockHeight / 2 - 5}" text-anchor="middle" class="station-id">${escapeHtml(station.id)}</text>
-      <text x="${centerX}" y="${y + blockHeight / 2 + 14}" text-anchor="middle" class="station-size">${station.automation ? "A" : "M"} · ${width.toFixed(1)}x${depth.toFixed(1)}m</text>
-    </g>
-  `;
-}
-
-function renderLayoutConnectionBand(points) {
-  if (points.length < 2) return "";
-  const pointList = points.map((point) => `${point.x},${point.y}`).join(" ");
-  return `<polyline class="layout-connection-band" points="${pointList}"></polyline>`;
-}
-
-function renderLayoutProcessSegments(points) {
-  return points
-    .slice(0, -1)
-    .map((point, index) => {
-      const next = points[index + 1];
-      return `<line class="layout-process-segment" x1="${point.x}" y1="${point.y}" x2="${next.x}" y2="${next.y}"></line>`;
-    })
-    .join("");
+function getLayoutStations() {
+  return layoutPage.getLayoutStations();
 }
 
 function renderMappingCanvas() {
-  const layoutStations = getLayoutStations();
-  const bottomCount = Math.max(1, Math.ceil((layoutStations.length - 1) / 2));
-  const floorWidth = 560;
-  const floorHeight = 450;
+  return layoutPage.renderCanvas();
+}
 
-  return `
-    <div class="layout-page-board">
-      <section class="layout-sketch-card">
-        <div class="layout-sketch-head">
-                  <div>
-            <b>Drawing</b>
-            <span>Station blocks are connected edge-to-edge in a U-shaped layout.</span>
-                  </div>
-          <em>Blueprint sketch</em>
-                </div>
-        <div class="layout-u-scroll">
-          <svg class="layout-blueprint" viewBox="0 0 ${floorWidth} ${floorHeight}" role="img" aria-label="U-shaped station layout drawing">
-              <rect class="layout-outer-border" x="22" y="18" width="${floorWidth - 44}" height="${floorHeight - 36}"></rect>
-              ${layoutStations.map((item, index) => renderLayoutStationBlock(item, index, layoutStations.length, bottomCount)).join("")}
-              ${layoutStations.map((item, index) => renderLayoutOperator(item, index, layoutStations.length, bottomCount)).join("")}
-          </svg>
-                  </div>
-        <div class="layout-legend">
-          <span><i class="manual"></i>Manual station</span>
-          <span><i class="auto"></i>Automation station</span>
-          <span><i class="warn"></i>Near / risk station</span>
-                </div>
-      </section>
-    </div>
-  `;
+async function refreshInputUploadStatus() {
+  await inputPage.refreshUploadStatus();
+}
+
+async function uploadInputFile(input) {
+  await inputPage.uploadFile(input);
+}
+
+function bindInputUploads() {
+  inputPage.bind(refs.twinCanvas);
 }
 
 function stationStateLabel(state) {
@@ -2455,155 +2391,19 @@ function getAiStepById(stepId) {
 }
 
 function getStationMaterialList(stationId) {
-  return stationMaterialLists.find((list) => list.station === stationId);
+  return miOutputPage.getStationMaterialList(stationId);
 }
 
 function getMiStationStepRows(station) {
-  return station.steps.flatMap((stepId) => {
-    const macro = getMacroStepById(stepId);
-    const aiStep = getAiStepById(stepId);
-    const partName = aiStep?.material || macro?.station || "TBD";
-    const microRows = macro?.microSteps || [];
-    if (!microRows.length) {
-      return [
-        {
-          step: formatStepId(stepId),
-          description: aiStep?.detail || station.note,
-          partName,
-          partNumber: `ASM-${formatStepId(stepId)}-000`,
-        },
-      ];
-    }
-    return microRows.map((microStep, index) => ({
-      step: `${formatStepId(stepId)}.${String(index + 1).padStart(2, "0")}`,
-      description: microStep[0],
-      partName: microStep[8] || partName,
-      partNumber: `ASM-${formatStepId(stepId)}-${String(index + 1).padStart(3, "0")}`,
-    }));
-  });
+  return miOutputPage.getStationStepRows(station);
 }
 
 function getStationQualityRiskRows(station) {
-  if (!Array.isArray(station.miQualityRisks)) station.miQualityRisks = ["", "", ""];
-  while (station.miQualityRisks.length < 3) station.miQualityRisks.push("");
-  return station.miQualityRisks.slice(0, 3);
+  return miOutputPage.getQualityRiskRows(station);
 }
 
 function renderMiCanvas() {
-  const targetCt = 58;
-  const stations = getActiveStations();
-  const allBomItems = stationMaterialLists.flatMap((station) => station.items);
-  const reviewItems = allBomItems.filter((item) => item[5] !== "Matched");
-  const totalHc = stations.reduce((sum, station) => sum + Number(station.hc), 0);
-
-  return `
-    <div class="mi-package-view">
-      <section class="mi-package-header">
-        <div>
-          <span class="mi-kicker">Manufacturing Instruction · AI Draft</span>
-          <h3>MI Package Preview</h3>
-          <p>Rebuilt from generated steps, station layout, Station BOM List, and human input constraints. This page learns the MI information hierarchy without copying Excel.</p>
-        </div>
-        <div class="mi-release-summary">
-          <b>Target CT 58s</b>
-          <span>${stations.length} stations · ${sopMacroSteps.length} macro steps · ${totalHc.toFixed(1)} HC</span>
-          <em>${reviewItems.length} BOM / tooling item(s) need confirmation</em>
-        </div>
-      </section>
-
-      <section class="mi-document-fields">
-        <div><span>Product</span><strong>XPS-14 Thermal Module Assembly</strong></div>
-        <div><span>Revision</span><strong>Rev B03 · Draft</strong></div>
-        <div><span>Source Alignment</span><strong>Steps + Station Draft + BOM List</strong></div>
-        <div><span>Release Gate</span><strong>ME/QE review before export</strong></div>
-      </section>
-
-      <section class="mi-station-output-list">
-        ${stations
-          .map((station) => {
-            const stationStepRows = getMiStationStepRows(station);
-            const qualityRiskRows = getStationQualityRiskRows(station);
-            const status = stationStateLabel(station.state);
-            const stateClass = station.state === "over" ? "warn" : "";
-
-            return `
-              <article class="mi-station-output-card ${stateClass}">
-                <header>
-                  <div>
-                    <b>${station.id}</b>
-                    <h4>${station.note}</h4>
-                    <p>${station.issue}</p>
-                  </div>
-                  <div class="mi-station-meta">
-                    <strong>${station.time}s</strong>
-                    <span>${status} · Target CT ${targetCt}s · ${station.hc} HC</span>
-                    <div class="mi-station-meta-actions">
-                      <label class="mi-ctq-inline">
-                        <span>CTQ</span>
-                        <textarea rows="2" data-mi-ctq-station="${station.id}" placeholder="Fill station CTQ">${escapeHtml(station.miCtq || "")}</textarea>
-                      </label>
-                      <label class="mi-image-upload">
-                        <input type="file" accept="image/*" data-mi-image-station="${station.id}" />
-                        <span>Upload Image</span>
-                      </label>
-                    </div>
-                    ${station.miImageName ? `<small class="mi-image-name">${escapeHtml(station.miImageName)}</small>` : ""}
-                  </div>
-                </header>
-                ${
-                  station.miImageUrl
-                    ? `<div class="mi-station-image-preview"><img src="${station.miImageUrl}" alt="${station.id} uploaded station reference" /></div>`
-                    : ""
-                }
-
-                <div class="mi-station-grid mi-station-final-output">
-                  <section>
-                    <h5>Step List</h5>
-                    <div class="mi-step-list-table">
-                      <div class="mi-step-list-head"><span>Step</span><span>Step Description</span><span>Part Name</span><span>Part Number</span></div>
-                      ${
-                        stationStepRows.length
-                          ? stationStepRows
-                                      .map(
-                                (row) => `
-                                  <div class="mi-step-list-row">
-                                    <b>${escapeHtml(row.step)}</b>
-                                    <span>${escapeHtml(row.description)}</span>
-                                    <small>${escapeHtml(row.partName)}</small>
-                                    <em>${escapeHtml(row.partNumber)}</em>
-                                  </div>
-                                `,
-                                      )
-                                      .join("")
-                          : `<div class="mi-step-list-empty">No detailed steps assigned.</div>`
-                              }
-                          </div>
-                  </section>
-
-                  <section>
-                    <h5>Quality Risk</h5>
-                    <div class="mi-quality-risk-table">
-                      <div class="mi-quality-risk-head"><span>#</span><span>Risk Description</span></div>
-                      ${qualityRiskRows
-                              .map(
-                          (risk, index) => `
-                            <div class="mi-quality-risk-row">
-                              <b>${index + 1}</b>
-                              <textarea rows="2" data-mi-risk-station="${station.id}" data-mi-risk-index="${index}" placeholder="Fill quality risk">${escapeHtml(risk)}</textarea>
-                                  </div>
-                                `,
-                              )
-                        .join("")}
-                    </div>
-                  </section>
-                </div>
-              </article>
-            `;
-          })
-          .join("")}
-      </section>
-    </div>
-  `;
+  return miOutputPage.renderCanvas();
 }
 
 function riskClass(risk) {
@@ -2682,13 +2482,31 @@ function renderEditorToolbar() {
   } else if (currentStageKey === "steps") {
     refs.editorContext.innerHTML = `
       <div><h2>Generated Step List</h2><p>Review and edit process time here. Theoretical PT is the AI / MTM baseline; Actual PT is the final time used for CT calculation.</p></div>
-      <button class="micro-add-step" type="button" data-action="add-micro-step">+ Add Step</button>
+      <div class="step-toolbar-actions">
+        <button class="micro-add-step" type="button" data-action="add-micro-step">+ Add Step</button>
+        <button class="micro-export-step" type="button" data-action="export-steps-excel">⤓ Export Excel</button>
+      </div>
     `;
     refs.editorContext.querySelector?.("[data-action='add-micro-step']")?.addEventListener("click", addMicroStep);
+    refs.editorContext.querySelector?.("[data-action='export-steps-excel']")?.addEventListener("click", exportStepsToExcel);
   } else if (currentStageKey === "time") {
     refs.editorContext.innerHTML = `<div><h2>CT Calculation</h2><p>Target CT uses all confirmed step actual PT from Process Time as the total process-time basis.</p></div>`;
   } else if (currentStageKey === "station") {
-    refs.editorContext.innerHTML = "";
+    const stale = isStationPlanStale();
+    const status = stationPlanState.status;
+    if (status === "idle") {
+      refs.editorContext.innerHTML = `<div><h2>Station Plan</h2><p>Go to Page 04, set a target CT, then click “Generate Station Plan”.</p></div>`;
+    } else {
+      const tone = status === "generating" ? "generating" : stale ? "stale" : status;
+      refs.editorContext.innerHTML = `
+        <div><h2>Station Plan</h2><p>${escapeHtml(stationPlanState.message || "")}</p></div>
+        <div class="station-plan-status ${tone}">
+          <span>${status === "generating" ? `<span class="station-spinner"></span> Generating station plan…` : stale ? "CT changed on Page 04 — plan is out of date" : "Plan based on CT " + stationPlanState.ctSnapshot + "s / HC " + stationPlanState.hcSnapshot}</span>
+          ${status !== "generating" && (stale || status === "ready" || status === "failed") ? `<button class="generate-station-btn" type="button" data-action="regenerate-station-plan">Regenerate Plan</button>` : ""}
+        </div>
+      `;
+      refs.editorContext.querySelector?.("[data-action='regenerate-station-plan']")?.addEventListener("click", generateStationPlan);
+    }
   } else if (currentStageKey === "mapping") {
     refs.editorContext.innerHTML = `<div><h2>Layout Dimensions</h2><p>Adjust each station block size for the U-shaped layout sketch. Values are front-end mock inputs.</p></div>`;
   } else {
@@ -2755,172 +2573,13 @@ function renderMacroRows() {
 
 function renderParseRows({ showTiming = currentStageKey === "steps" } = {}) {
   if (!refs.rows) return;
-  refs.rows.innerHTML = steps
-    .map((step, macroIndex) => {
-      const macro = getMacroStep(step.id);
-      const detailedSteps = macro?.microSteps?.length ? macro.microSteps : [["New step", "TBD", 3, "Edit", 3]];
-      return detailedSteps
-        .map((microStep, index) => {
-          const groupClass = macroIndex % 2 === 0 ? "micro-group-green" : "micro-group-blue";
-          const movedClass = hasMicroFlag(microStep, "moved") ? "micro-moved" : "";
-          const pt = getMicroPt(microStep, index);
-          const actualPt = getActualPt(microStep, index);
-          const automation = getMicroAutomation(microStep);
-          return `
-            <tr class="workflow-breakdown-row ${groupClass} ${movedClass} ${step.id === selectedStepId ? "selected" : ""}" data-id="${step.id}" data-macro-id="${step.id}" data-micro-index="${index}">
-              ${
-                index === 0
-                  ? `<td class="workflow-master-cell" rowspan="${detailedSteps.length}" data-step-id="${step.id}">
-                    <div class="workflow-master-card">
-                      <div class="workflow-master-head">
-                        <button class="workflow-sop-drag-handle" type="button" draggable="true" data-step-id="${step.id}" title="Drag SOP workflow" aria-label="Drag SOP workflow">⋮⋮</button>
-                        <span>Workflow ${formatStepNumber(step.id)}</span>
-                      </div>
-                      <input class="workflow-edit-field workflow-title-field" data-step-id="${step.id}" data-field="process" value="${escapeHtml(step.process)}" />
-                    </div>
-                  </td>`
-                  : ""
-              }
-              <td class="workflow-step-cell"><button class="workflow-drag-handle" type="button" draggable="true" data-macro-id="${step.id}" data-micro-index="${index}" title="Drag to move step" aria-label="Drag to move step">⋮⋮</button><b>${formatStepId(step.id)}.${String(index + 1).padStart(2, "0")}</b></td>
-              <td>
-                <select class="micro-edit-field micro-automation-field" data-macro-id="${step.id}" data-micro-index="${index}" data-micro-field="7">
-                  <option value="M" ${automation === "M" ? "selected" : ""}>M</option>
-                  <option value="A" ${automation === "A" ? "selected" : ""}>A</option>
-                </select>
-              </td>
-              <td><textarea class="micro-edit-field micro-action-field workflow-step-description" rows="2" data-macro-id="${step.id}" data-micro-index="${index}" data-micro-field="0">${escapeHtml(microStep[0])}</textarea></td>
-              <td><input class="workflow-edit-field workflow-part-field" data-step-id="${step.id}" data-field="material" value="${escapeHtml(step.material || "TBD")}" /></td>
-              ${
-                showTiming
-                  ? `<td><input class="micro-edit-field micro-time-field" type="number" min="0" step="0.5" data-macro-id="${step.id}" data-micro-index="${index}" data-micro-field="2" value="${pt}" /></td>
-              <td><input class="micro-edit-field micro-time-field" type="number" min="0" step="0.5" data-macro-id="${step.id}" data-micro-index="${index}" data-micro-field="4" value="${actualPt}" /></td>`
-                  : ""
-              }
-              <td class="micro-actions-cell"><button class="micro-confirm-step" type="button" data-action="confirm-micro-step" data-macro-id="${step.id}" data-micro-index="${index}">Confirm</button><button class="micro-delete-step" type="button" data-action="delete-micro-step" data-macro-id="${step.id}" data-micro-index="${index}">Delete</button></td>
-            </tr>
-          `;
-        })
-        .join("");
-    })
-    .join("");
-
+  refs.rows.innerHTML = workflowTable.renderRowsHtml({ showTiming });
   bindWorkflowBreakdownRows();
 }
 
 function bindWorkflowBreakdownRows() {
-  refs.rows.querySelectorAll(".workflow-master-cell").forEach((cell) => {
-    cell.addEventListener("dragover", (event) => {
-      if (!draggedSopStepId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      cell.classList.add("drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-    cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
-    cell.addEventListener("drop", (event) => {
-      if (!draggedSopStepId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const sourceId = event.dataTransfer?.getData("text/plain") || draggedSopStepId;
-      cell.classList.remove("drop-target");
-      draggedSopStepId = "";
-      moveSopStep(sourceId, cell.dataset.stepId);
-    });
-  });
-
-  refs.rows.querySelectorAll(".workflow-sop-drag-handle").forEach((handle) => {
-    handle.addEventListener("click", (event) => event.stopPropagation());
-    handle.addEventListener("dragstart", (event) => {
-      event.stopPropagation();
-      draggedSopStepId = handle.dataset.stepId;
-      event.dataTransfer?.setData("text/plain", draggedSopStepId);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-      handle.closest(".workflow-master-cell")?.classList.add("dragging");
-    });
-    handle.addEventListener("dragend", () => {
-      draggedSopStepId = "";
-      handle.closest(".workflow-master-cell")?.classList.remove("dragging");
-      refs.rows.querySelectorAll(".workflow-master-cell.drop-target").forEach((node) => node.classList.remove("drop-target"));
-    });
-  });
-
-  refs.rows.querySelectorAll(".workflow-breakdown-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      selectedStepId = row.dataset.id;
-      selectedMacroStepId = row.dataset.macroId;
-      if (currentStageKey === "parse") {
-        renderParsePanel();
-        scrollSelectedSopStepIntoView();
-      } else {
-        renderStage("steps");
-      }
-    });
-    row.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      row.classList.add("drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-    row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
-    row.addEventListener("dragend", () => {
-      row.classList.remove("dragging", "drop-target");
-      draggedMicroStep = null;
-    });
-    row.addEventListener("drop", (event) => {
-      event.preventDefault();
-      row.classList.remove("drop-target");
-      if (!draggedMicroStep) return;
-      swapMicroSteps(draggedMicroStep.macroId, draggedMicroStep.index, row.dataset.macroId, Number(row.dataset.microIndex));
-      draggedMicroStep = null;
-    });
-  });
-
-  refs.rows.querySelectorAll(".workflow-drag-handle").forEach((handle) => {
-    handle.addEventListener("click", (event) => event.stopPropagation());
-    handle.addEventListener("dragstart", (event) => {
-      const row = handle.closest(".workflow-breakdown-row");
-      draggedMicroStep = { macroId: handle.dataset.macroId, index: Number(handle.dataset.microIndex) };
-      row?.classList.add("dragging");
-      event.dataTransfer?.setData("text/plain", `${handle.dataset.macroId}:${handle.dataset.microIndex}`);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-    });
-    handle.addEventListener("dragend", () => {
-      handle.closest(".workflow-breakdown-row")?.classList.remove("dragging", "drop-target");
-      draggedMicroStep = null;
-    });
-  });
-
-  refs.rows.querySelectorAll(".workflow-edit-field").forEach((field) => {
-    field.addEventListener("click", (event) => event.stopPropagation());
-    field.addEventListener("input", () => updateWorkflowFromField(field));
-    field.addEventListener("change", () => {
-      updateWorkflowFromField(field);
-      renderStage(getStepTableStageKey());
-    });
-  });
-  refs.rows.querySelectorAll(".micro-edit-field").forEach((field) => {
-    field.addEventListener("click", (event) => event.stopPropagation());
-    field.addEventListener("input", () => {
-      const macro = getMacroStep(field.dataset.macroId);
-      const index = Number(field.dataset.microIndex);
-      const fieldIndex = Number(field.dataset.microField);
-      if (!macro.microSteps[index] || !Number.isFinite(fieldIndex)) return;
-      macro.microSteps[index][fieldIndex] = fieldIndex === 2 || fieldIndex === 4 ? Number(field.value) || 0 : field.value;
-      selectedMacroStepId = macro.id;
-    });
-    field.addEventListener("change", () => updateMicroStepFromField(field));
-  });
-  refs.rows.querySelectorAll("[data-action='delete-micro-step']").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      deleteMicroStep(Number(button.dataset.microIndex), button.dataset.macroId);
-    });
-  });
-  refs.rows.querySelectorAll("[data-action='confirm-micro-step']").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      confirmMicroStep(Number(button.dataset.microIndex), button.dataset.macroId);
-    });
-  });
+  if (!refs.rows) return;
+  workflowTable.bind(refs.rows);
 }
 
 function renderMicroRows() {
@@ -3023,34 +2682,7 @@ function renderMicroRows() {
 
 function renderCtRows() {
   if (!refs.rows) return;
-  const query = refs.search?.value.trim().toLowerCase() || "";
-  const rows = sopMacroSteps
-    .flatMap((macro, macroIndex) => macro.microSteps.map((microStep, index) => ({ macro, macroIndex, microStep, index })))
-    .filter(({ macro, microStep, index }) => {
-      if (!query) return true;
-      const stepNo = `step ${formatStepId(macro.id)}`;
-      const processStep = formatProcessStepLabel(macro);
-      const microNo = `${formatStepId(macro.id)}.${String(index + 1).padStart(2, "0")}`;
-      return [stepNo, processStep, microNo, macro.title, macro.station, microStep[0]].some((value) => String(value).toLowerCase().includes(query));
-    });
-
-  refs.rows.innerHTML = rows
-    .map(({ macro, macroIndex, microStep, index }) => {
-      const pt = getMicroPt(microStep, index);
-      const actualPt = getActualPt(microStep, index);
-      const groupClass = macroIndex % 2 === 0 ? "micro-group-green" : "micro-group-blue";
-      return `
-        <tr class="micro-xlsx-row ${groupClass}">
-          <td class="process-cell"><strong>${escapeHtml(formatProcessStepLabel(macro))}</strong></td>
-          <td><b>${formatStepId(macro.id)}.${String(index + 1).padStart(2, "0")}</b></td>
-          <td><span class="automation-chip ${getMicroAutomation(microStep) === "A" ? "auto" : ""}">${getMicroAutomation(microStep)}</span></td>
-          <td class="process-cell"><strong>${escapeHtml(microStep[0])}</strong><small>${escapeHtml(macro.title)}</small></td>
-          <td>${pt}</td>
-          <td>${actualPt}</td>
-        </tr>
-      `;
-    })
-    .join("");
+  ctCalculationPage.renderRows(refs.rows);
 }
 
 function renderHumanRows() {
@@ -3070,79 +2702,44 @@ function renderHumanRows() {
     .join("");
 }
 
+function getActiveAiPlan() {
+  const plans = stationPlanState.plans || [];
+  if (!plans.length) return null;
+  const idx = stationPlanState.selectedPlanIndex ?? plans.reduce((b, p, i) => (p.lbr > plans[b].lbr ? i : b), 0);
+  return plans[idx] || null;
+}
+
 function renderStationRows() {
+  // Driven by the AI plan, never the legacy mock stations.
   if (!refs.rows) return;
-  syncStationAutomationGrouping();
-  const targetCt = 58;
-  refs.rows.innerHTML = getActiveStations()
-    .map((station) => {
-      const load = Math.round((station.time / targetCt) * 100);
-      const chipClass = station.override ? "risk-med" : station.state === "over" ? "risk-high" : "risk-low";
-      const status = station.override
-        ? "Human override"
-        : station.state === "over"
-          ? "Needs rebalance"
-          : "Within CT";
+  const plan = getActiveAiPlan();
+  if (stationPlanState.status === "idle" || !plan) {
+    refs.rows.innerHTML = "";
+    return;
+  }
+  const targetCt = plan.targetCt || 1;
+  refs.rows.innerHTML = plan.stations
+    .map((s) => {
+      const load = Math.round((s.st / targetCt) * 100);
+      const chip = s.overTarget ? "risk-high" : "risk-low";
+      const status = s.overTarget ? "Over CT" : "Within CT";
       return `
-        <tr data-station-id="${station.id}" class="${station.id === selectedStationId ? "selected" : ""} station-row-${station.state} ${station.override ? "override-row" : ""}">
-          <td><b>${station.id}</b></td>
-          <td class="process-cell"><strong>${station.note}</strong><small>${station.steps.map((stepId) => `${stepId} ${getStepById(stepId)?.process || ""}`).join(" · ")}</small></td>
-          <td><strong class="time-cell">${station.time}s</strong></td>
-          <td>58s</td>
+        <tr class="${s.overTarget ? "station-row-over" : ""}">
+          <td><b>ST${String(s.stationNo).padStart(2, "0")}</b></td>
+          <td class="process-cell"><strong>${escapeHtml(s.name)}</strong><small>${s.stepNos.join(" · ")}</small></td>
+          <td><strong class="time-cell">${s.st}s</strong></td>
+          <td>${targetCt}s</td>
           <td>${load}%</td>
-          <td>${station.hc}</td>
-          <td class="process-cell"><small>${station.issue}</small></td>
-          <td><span class="chip ${chipClass}">${status}</span></td>
-        </tr>
-      `;
+          <td>${s.automation === "A" ? "0.0" : "1.0"}</td>
+          <td class="process-cell"><small>${s.automation === "A" ? "Automated station" : "Manual station"}</small></td>
+          <td><span class="chip ${chip}">${status}</span></td>
+        </tr>`;
     })
     .join("");
-
-  refs.rows.querySelectorAll("tr").forEach((row) => {
-    row.addEventListener("click", () => {
-      selectedStationId = row.dataset.stationId;
-      renderStage("station");
-    });
-  });
 }
 
 function renderLayoutRows() {
-  if (!refs.rows) return;
-  refs.rows.innerHTML = getLayoutStations()
-    .map(({ station, width, depth, operatorSide }) => {
-      return `
-        <tr class="layout-dimension-row ${station.id === selectedStationId ? "selected" : ""}" data-station-id="${station.id}">
-          <td><b>${escapeHtml(station.id)}</b></td>
-          <td><span class="automation-chip ${station.automation ? "auto" : ""}">${station.automation ? "A" : "M"}</span></td>
-          <td><input class="layout-dimension-field" type="number" min="0.5" step="0.1" data-layout-field="layoutWidth" data-station-id="${station.id}" value="${width}" /></td>
-          <td><input class="layout-dimension-field" type="number" min="0.5" step="0.1" data-layout-field="layoutDepth" data-station-id="${station.id}" value="${depth}" /></td>
-          <td>
-            <select class="layout-dimension-field" data-layout-field="operatorSide" data-station-id="${station.id}">
-              ${["Inside U", "Outside U", "Service side", "No operator"].map((option) => `<option value="${option}" ${operatorSide === option ? "selected" : ""}>${option}</option>`).join("")}
-            </select>
-          </td>
-          <td class="process-cell"><small>${station.steps.join(", ") || "No assigned step"}</small></td>
-          <td class="process-cell"><small>${escapeHtml(station.issue)}</small></td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  refs.rows.querySelectorAll(".layout-dimension-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      selectedStationId = row.dataset.stationId;
-      renderMappingPanel();
-    });
-  });
-
-  refs.rows.querySelectorAll(".layout-dimension-field").forEach((field) => {
-    field.addEventListener("click", (event) => event.stopPropagation());
-    field.addEventListener("input", () => updateStationLayoutFromField(field));
-    field.addEventListener("change", () => {
-      updateStationLayoutFromField(field);
-      renderStage("mapping");
-    });
-  });
+  layoutPage.renderRows(refs);
 }
 
 function renderRows() {
@@ -3159,211 +2756,47 @@ function renderRows() {
 }
 
 function renderInputPanel() {
-  const readyCount = inputSources.filter((source) => source.quality === "Ready").length;
-  const reviewItems = inputSources.filter((source) => source.quality === "Review");
-  const missingItems = inputSources.filter((source) => source.quality === "Missing");
-  setText(refs.aiStepTitle, "AI Input Diagnosis");
-  setText(refs.confidence, `${readyCount}/${inputSources.length}`);
-  setText(refs.aiReason, "Upload the inputs first: historical MI provides the previous process and MI format, assembly videos extract actions and parts, and MTM / historical layout supports later CT and station balancing.");
-  if (refs.missingList) {
-    refs.missingList.innerHTML = `
-      <li>Historical MI and assembly videos are the minimum inputs for Page 02 SOP draft</li>
-      <li>${reviewItems.length} uploaded source(s) still need human review</li>
-      <li>${missingItems.length} optional source(s) missing; downstream pages keep review flags</li>
-    `;
-  }
-  setText(refs.evidenceTitle, "Next AI Outputs");
-  if (refs.evidenceList) {
-    refs.evidenceList.className = "timing-exposure-list";
-    refs.evidenceList.innerHTML = `
-      <div class="timing-exposure-row"><b>02</b><span>SOP Draft</span><small>Generate new SOP from uploaded historical MI and assembly videos</small></div>
-      <div class="timing-exposure-row"><b>03</b><span>Steps</span><small>Break SOP workflows into detailed work steps</small></div>
-      <div class="timing-exposure-row warn"><b>06</b><span>Station Draft</span><small>Use MTM / history input to balance CT and HC</small></div>
-      <div class="timing-exposure-row ctq"><b>08</b><span>MI Package</span><small>Export aligned MI after station and BOM checks</small></div>
-    `;
-  }
+  inputPage.renderPanel(refs);
 }
 
 function renderAI() {
   const step = getStepById(selectedStepId) || steps[0];
-  setText(refs.evidenceTitle, "Evidence Sources");
-  if (refs.evidenceList) refs.evidenceList.className = "evidence-list";
-  setText(refs.aiStepTitle, `Step ${formatStepId(step.id)} · ${step.process}`);
-  setText(refs.confidence, step.confidence);
-  setText(refs.aiReason, step.reason);
-  if (refs.missingList) refs.missingList.innerHTML = step.missing.map((item) => `<li>${item}</li>`).join("");
-  if (refs.evidenceList) {
-    refs.evidenceList.innerHTML = step.evidence
-      .map((item) => `<div class="evidence"><b>${item}</b><span>Matched by AI trace log</span></div>`)
-      .join("");
+  if (!step) {
+    globalThis.MciAiPanel.renderPanel(refs, {
+      title: "Step Review · Waiting for parsing",
+      confidence: "0",
+      reason: "No parsed SOP workflow is available yet. Parse uploaded inputs on Page 01 before reviewing generated steps.",
+      missingItems: ["Run Parse Uploaded Inputs"],
+      evidenceTitle: "Evidence Sources",
+      evidenceClass: "evidence-list",
+      evidenceVariant: "trace",
+      evidenceItems: [],
+    });
+    return;
   }
+  globalThis.MciAiPanel.renderPanel(refs, {
+    title: `Step ${formatStepId(step.id)} · ${step.process}`,
+    confidence: step.confidence,
+    reason: step.reason,
+    missingItems: step.missing,
+    evidenceTitle: "Evidence Sources",
+    evidenceClass: "evidence-list",
+    evidenceVariant: "trace",
+    evidenceItems: step.evidence.map((item) => ({ title: item })),
+  });
 }
 
 function bindSopPanelInteractions() {
-  refs.evidenceList?.querySelector("[data-action='toggle-sop-add']")?.addEventListener("click", () => {
-    if (sopAddPanelOpen) closeSopStepDraft();
-    else openSopStepDraft();
-  });
-
-  refs.evidenceList?.querySelector("[data-action='generate-sop-step']")?.addEventListener("click", generateSopStepFromDraft);
-
-  refs.evidenceList?.querySelectorAll("[data-draft-field]").forEach((field) => {
-    field.addEventListener("input", () => updateSopStepDraft(field));
-    field.addEventListener("change", () => updateSopStepDraft(field));
-  });
+  processStepPage.bindPanel(refs);
 }
 
 function renderParsePanel() {
-  const step = getStepById(selectedStepId) || steps[0];
-  const reviewCount = steps.filter((item) => getSopStepTone(item) === "review").length;
-  const addPanel = `
-    <div class="sop-add-panel ${sopAddPanelOpen ? "open" : ""}">
-      <button class="sop-panel-toggle" type="button" data-action="toggle-sop-add">${sopAddPanelOpen ? "Close Add Step" : "+ Add SOP Step"}</button>
-      ${
-        sopAddPanelOpen
-          ? `
-            <div class="sop-add-form">
-              <label>Process<input data-draft-field="process" value="${escapeHtml(sopStepDraft.process)}" placeholder="Example: Apply thermal pad" /></label>
-              <label>Detail<textarea data-draft-field="detail" rows="3" placeholder="Describe method, sequence, and evidence needed">${escapeHtml(sopStepDraft.detail)}</textarea></label>
-              <div class="sop-add-form-grid">
-                <label>Part Area<input data-draft-field="station" value="${escapeHtml(sopStepDraft.station)}" /></label>
-                <label>Review<select data-draft-field="status">
-                  ${["Extracted", "Needs Review", "Confirmed"].map((status) => `<option value="${status}" ${sopStepDraft.status === status ? "selected" : ""}>${status}</option>`).join("")}
-                </select></label>
-              </div>
-              <button class="sop-generate-step" type="button" data-action="generate-sop-step">Generate Step</button>
-            </div>
-          `
-          : ""
-      }
-    </div>
-  `;
-  setText(refs.pressureTitle, "Parsed Artifacts");
-  if (refs.stationRadar) {
-    refs.stationRadar.innerHTML = `
-      <div class="parsed-artifact-summary">
-        <div class="parsed-artifact-item"><strong>${steps.length}</strong><span>Predicted SOP steps</span><small>Editable AI-generated assembly actions</small></div>
-        <div class="parsed-artifact-item"><strong>35</strong><span>Frame anchors</span><small>Assembly video operation moments and placeholders</small></div>
-        <div class="parsed-artifact-item"><strong>6</strong><span>Tooling notes</span><small>Fixture and tool references from operation videos</small></div>
-        <div class="parsed-artifact-item"><strong>${reviewCount}</strong><span>Human gaps</span><small>Steps still needing confirmation</small></div>
-      </div>
-    `;
-  }
-  setText(refs.aiStepTitle, `SOP Flow · Step ${formatStepId(step.id)}`);
-  setText(refs.confidence, step.confidence || "Manual");
-  setText(refs.aiReason, step.reason || "This SOP step is being manually adjusted before detailed step generation.");
-  if (refs.missingList) {
-    setText(refs.missingTitle, "");
-    refs.missingList.innerHTML = "";
-  }
-  setText(refs.evidenceTitle, "Editable SOP Flow");
-  if (refs.evidenceList) {
-    refs.evidenceList.className = "timing-exposure-list sop-panel-list";
-    refs.evidenceList.innerHTML = `
-      ${addPanel}
-      <div class="timing-exposure-row warn"><b>Edit</b><span>Correct AI extraction</span><small>fix action text, method detail, station, CT, or status</small></div>
-      <div class="timing-exposure-row ctq"><b>Drag</b><span>Repair SOP order</span><small>drop onto another card to match the video flow</small></div>
-    `;
-  }
+  processStepPage.renderPanel(refs);
   bindSopPanelInteractions();
 }
 
 function bindSopFlowInteractions() {
-  const track = refs.twinCanvas?.querySelector(".sop-step-track");
-  let isTrackPanning = false;
-  let trackStartX = 0;
-  let trackStartScrollLeft = 0;
-
-  track?.addEventListener("pointerdown", (event) => {
-    if (event.target.closest("input, textarea, select, button, .sop-step-card-head")) return;
-    isTrackPanning = true;
-    trackStartX = event.clientX;
-    trackStartScrollLeft = track.scrollLeft;
-    track.classList.add("panning");
-    track.setPointerCapture?.(event.pointerId);
-  });
-
-  track?.addEventListener("pointermove", (event) => {
-    if (!isTrackPanning) return;
-    event.preventDefault();
-    track.scrollLeft = trackStartScrollLeft - (event.clientX - trackStartX);
-  });
-
-  const stopTrackPan = (event) => {
-    if (!isTrackPanning) return;
-    isTrackPanning = false;
-    track.classList.remove("panning");
-    track.releasePointerCapture?.(event.pointerId);
-  };
-
-  track?.addEventListener("pointerup", stopTrackPan);
-  track?.addEventListener("pointercancel", stopTrackPan);
-
-  refs.twinCanvas?.querySelectorAll(".sop-step-card").forEach((card) => {
-    card.addEventListener("click", (event) => {
-      if (event.target.closest("[data-action='delete-sop-step']")) return;
-      selectedStepId = card.dataset.stepId;
-      refs.twinCanvas?.querySelectorAll(".sop-step-card").forEach((node) => node.classList.toggle("active", node.dataset.stepId === selectedStepId));
-      renderRows();
-      renderParsePanel();
-    });
-
-    card.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      if (card.dataset.stepId !== draggedSopStepId) card.classList.add("drop-target");
-    });
-
-    card.addEventListener("dragleave", () => {
-      card.classList.remove("drop-target");
-    });
-
-    card.addEventListener("drop", (event) => {
-      event.preventDefault();
-      const sourceId = event.dataTransfer?.getData("text/plain") || draggedSopStepId;
-      card.classList.remove("drop-target");
-      moveSopStep(sourceId, card.dataset.stepId);
-    });
-  });
-
-  refs.twinCanvas?.querySelectorAll("[data-action='delete-sop-step']").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      deleteSopStep(button.dataset.stepId);
-    });
-  });
-
-  refs.twinCanvas?.querySelectorAll(".sop-step-card-head").forEach((head) => {
-    head.addEventListener("dragstart", (event) => {
-      if (!event.target.closest(".sop-drag-handle")) {
-        event.preventDefault();
-        return;
-      }
-      draggedSopStepId = head.dataset.stepId;
-      event.dataTransfer?.setData("text/plain", draggedSopStepId);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-      head.closest(".sop-step-card")?.classList.add("dragging");
-    });
-
-    head.addEventListener("dragend", () => {
-      draggedSopStepId = "";
-      head.closest(".sop-step-card")?.classList.remove("dragging");
-      refs.twinCanvas?.querySelectorAll(".sop-step-card.drop-target").forEach((node) => node.classList.remove("drop-target"));
-    });
-  });
-
-  refs.twinCanvas?.querySelectorAll(".sop-step-input").forEach((field) => {
-    field.addEventListener("focus", () => {
-      selectedStepId = field.dataset.stepId;
-      refs.twinCanvas?.querySelectorAll(".sop-step-card").forEach((node) => node.classList.toggle("active", node.dataset.stepId === selectedStepId));
-      renderParsePanel();
-    });
-    field.addEventListener("input", () => updateSopStepFromField(field));
-    field.addEventListener("change", () => {
-      updateSopStepFromField(field);
-      if (field.dataset.field === "status") renderStage("parse");
-    });
-  });
+  processStepPage.bind(refs.twinCanvas);
 }
 
 function renderHumanGatePanel() {
@@ -3396,211 +2829,49 @@ function renderHumanGatePanel() {
 }
 
 function renderCtPanel() {
-  const totalProcessTime = 354;
-  const generatedHc = Math.ceil(totalProcessTime / (Number(ctCalculatorState.targetCt) || 1));
-  const generatedCt = totalProcessTime / Math.max(1, Math.round(Number(ctCalculatorState.totalHc) || 1));
-  const volumeTargetCt = getVolumeTargetCt();
-  setText(refs.aiStepTitle, "Calculation Logic");
-  setText(refs.confidence, ctInputMode === "ct" ? `${generatedHc} HC` : ctInputMode === "volume" ? `${volumeTargetCt.toFixed(1)}s` : `${generatedCt.toFixed(1)}s`);
-  setText(refs.aiReason, "User can input target CT to generate total HC, input total HC to generate CT, or input daily volume / shift hours / OEE to generate target CT.");
-  if (refs.missingList) {
-    refs.missingList.innerHTML = `
-      <li>Total process time: ${totalProcessTime}s</li>
-      <li>Input CT ${ctCalculatorState.targetCt}s → Total HC ${generatedHc}</li>
-      <li>Input HC ${Math.round(Number(ctCalculatorState.totalHc) || 1)} → CT ${generatedCt.toFixed(1)}s</li>
-      <li>Input volume ${ctCalculatorState.dailyVolume} / ${ctCalculatorState.shiftCount} × ${ctCalculatorState.shiftHours}h / OEE ${ctCalculatorState.oee}% → CT ${volumeTargetCt.toFixed(1)}s</li>
-    `;
-  }
-  setText(refs.evidenceTitle, "Simple Formula");
-  if (refs.evidenceList) {
-    refs.evidenceList.className = "timing-exposure-list";
-    refs.evidenceList.innerHTML = `
-      <div class="timing-exposure-row"><b>HC</b><span>Total Process Time / CT</span><small>used when user inputs target CT</small></div>
-      <div class="timing-exposure-row"><b>CT</b><span>Total Process Time / HC</span><small>used when user inputs total HC</small></div>
-      <div class="timing-exposure-row"><b>CT</b><span>Available Time × OEE / Volume</span><small>used when user inputs volume assumptions</small></div>
-      <div class="timing-exposure-row ctq"><b>Next</b><span>Station draft</span><small>uses generated CT / HC as the balancing target</small></div>
-    `;
-  }
+  ctCalculationPage.renderPanel(refs);
 }
 
 function renderStationPanel() {
-  syncStationAutomationGrouping();
-  const station = getStationDraft();
-  const stations = getActiveStations();
-  const activeSummary = getStationPlanSummary(activeStationPlanId);
-  if (stationViewMode === "kpi") {
-    const lineKpi = getLineKpiSummary();
-    setText(refs.aiStepTitle, `Line KPI · ${lineKpi.name}`);
-    setText(refs.confidence, `${lineKpi.lbe.toFixed(1)}%`);
-    setText(refs.aiReason, "Line-level KPI is evaluated on the whole station plan. The main chart keeps only station-level HC and CT target comparison.");
-    setText(refs.missingTitle, "KPI");
-    if (refs.missingList) {
-      refs.missingList.className = "line-kpi-card-grid";
-      refs.missingList.innerHTML = `
-        <li><span>Line LBE</span><strong>${lineKpi.lbe.toFixed(1)}%</strong><small>overall balance</small></li>
-        <li><span>Total HC</span><strong>${lineKpi.totalHc.toFixed(1)}</strong><small>planned resource</small></li>
-        <li><span>Bottleneck CT</span><strong>${lineKpi.bottleneckCt.toFixed(0)}s</strong><small>slowest station</small></li>
-        <li><span>Line UPPH</span><strong>${lineKpi.lineUpph.toFixed(1)}</strong><small>from bottleneck CT</small></li>
-        <li class="${lineKpi.overTargetCount ? "warn" : ""}"><span>Over Target</span><strong>${lineKpi.overTargetCount}</strong><small>station count</small></li>
-      `;
-    }
-    renderStationViewActions();
+  // AI-driven; no legacy mock summary.
+  const plan = getActiveAiPlan();
+  if (stationPlanState.status === "idle" || !plan) {
+    globalThis.MciAiPanel.renderPanel(refs, {
+      title: "Station Balance · Waiting",
+      confidence: "0",
+      reason: "No station plan yet. Set a target CT on Page 04 and click Continue to generate Plan A / Plan B.",
+      missingItems: ["Generate a plan from Page 04 first"],
+      evidenceTitle: "Line KPI",
+      evidenceClass: "timing-exposure-list",
+      evidenceItems: [],
+    });
     return;
   }
-  if (!station) {
-    const overCount = stations.filter((item) => item.state === "over").length;
-    const overrideCount = stations.filter((item) => item.override).length;
-    setText(refs.aiStepTitle, `Station Balance · ${activeSummary.name}`);
-    setText(refs.confidence, `${activeSummary.lbe.toFixed(1)}%`);
-    setText(refs.aiReason, `${activeSummary.label}: ${activeSummary.description}`);
-    if (refs.missingList) {
-      refs.missingList.innerHTML = `
-        <li>${stations.length} stations in this plan</li>
-        <li>${overCount} station over target CT</li>
-        <li>${overrideCount} manual override submitted</li>
-      `;
-    }
-    renderStationViewActions();
-    return;
-  }
-
-  const targetCt = 58;
-  const load = Math.round((station.time / targetCt) * 100);
-  const over = station.time > targetCt;
-  const latestTrace = station.trace[0];
-  setText(refs.aiStepTitle, `Station Balance · ${station.id}${station.override ? " · Human Override" : ""}`);
-  setText(refs.confidence, station.override ? "Traced" : over ? "Hold" : "Ready");
-  setText(
-    refs.aiReason,
-    station.override
-      ? `${station.id} has a submitted human change. The system keeps the AI baseline, last submitted value, and current trace; downstream MI / Line Balance export must carry the override mark.`
-      : over
-        ? `${station.id} is currently ${station.time}s, above the locked target CT of ${targetCt}s. AI recommends keeping CTQ / locked steps unchanged first, then moving splittable actions to a lower-load station.`
-        : `${station.id} is currently ${station.time}s, below the locked target CT of ${targetCt}s. The station draft can proceed to human confirmation.`,
-  );
-  if (refs.missingList) {
-    refs.missingList.innerHTML = `
-      <li>Target CT: ${targetCt}s, locked from the previous CT calculation step</li>
-      <li>Assigned steps: ${station.steps.join(", ")}</li>
-      <li>Station load: ${load}% · HC ${station.hc}</li>
-      <li>${station.issue}</li>
-      ${station.override ? `<li>Manual override submitted: ${latestTrace?.time || "trace recorded"}</li>` : ""}
-    `;
-  }
-  renderStationViewActions();
+  globalThis.MciAiPanel.renderPanel(refs, {
+    title: `Station Balance · ${plan.name}`,
+    confidence: `${plan.lbr}%`,
+    reason: plan.strategy || "AI line balancing result.",
+    missingItems: [
+      `Line Balance Rate: ${plan.lbr}% (loss ${plan.lossRate}%)`,
+      `${plan.stationCount} stations · bottleneck ${plan.bottleneckSt}s · target CT ${plan.targetCt}s`,
+      `${plan.overTargetCount} station(s) over target CT`,
+    ],
+    evidenceTitle: "Line KPI",
+    evidenceClass: "timing-exposure-list",
+    evidenceItems: [
+      { badge: `${plan.lbr}%`, title: "Line Balance Rate", detail: "total CT / (stations × bottleneck)" },
+      { badge: `${plan.stationCount}`, title: "Stations", detail: "planned HC" },
+      { badge: `${plan.bottleneckSt}s`, title: "Bottleneck", detail: "slowest station ST" },
+    ],
+  });
 }
 
 function renderStationViewActions() {
-  setText(refs.evidenceTitle, "Station View");
-  if (!refs.evidenceList) return;
-  refs.evidenceList.className = "station-view-actions";
-  refs.evidenceList.innerHTML = `
-    <button class="${stationViewMode === "plan" ? "active" : ""}" type="button" data-action="station-view-plan">Station Plan</button>
-    <button class="${stationViewMode === "kpi" ? "active" : ""}" type="button" data-action="station-view-kpi">KPI Performance</button>
-  `;
-  refs.evidenceList.querySelector("[data-action='station-view-plan']")?.addEventListener("click", () => setStationViewMode("plan"));
-  refs.evidenceList.querySelector("[data-action='station-view-kpi']")?.addEventListener("click", () => setStationViewMode("kpi"));
+  stationPage.renderViewActions(refs);
 }
 
 function renderMappingPanel() {
-  const layoutStations = getLayoutStations();
-  const totalArea = layoutStations.reduce((sum, item) => sum + item.area, 0);
-  const selected = layoutStations.find(({ station }) => station.id === selectedStationId);
-  const lineKpi = getLineKpiSummary();
-  setText(refs.missingTitle, "KPI");
-  setText(refs.aiStepTitle, selected ? `Layout · ${selected.station.id}` : "U-shaped Layout Draft");
-  setText(refs.confidence, selected ? stationStateLabel(selected.station.state) : `${totalArea.toFixed(1)}m²`);
-  setText(
-    refs.aiReason,
-    selected
-      ? `${selected.station.id} is selected on the U-shaped layout. The station detail below is linked to the active line balance plan and editable layout dimensions.`
-      : "The U-shaped layout groups station blocks by flow sequence. AUTO is generated from A steps, while manual stations keep M steps from station balancing.",
-  );
-  if (refs.missingList) {
-    if (selected) {
-      const targetCt = Number(ctCalculatorState.targetCt) || 58;
-      const load = targetCt ? ((Number(selected.station.time) || 0) / targetCt) * 100 : 0;
-      refs.missingList.className = "layout-station-info-grid";
-    refs.missingList.innerHTML = `
-        <li><span>Space</span><strong>${selected.area.toFixed(1)}m²</strong><small>station footprint</small></li>
-        <li><span>HC</span><strong>${selected.station.hc}</strong><small>planned headcount</small></li>
-        <li><span>CT</span><strong>${selected.station.time}s</strong><small>${load.toFixed(0)}% of ${targetCt}s target</small></li>
-        <li class="${selected.station.state === "over" ? "warn" : ""}"><span>Status</span><strong>${stationStateLabel(selected.station.state)}</strong><small>${escapeHtml(selected.station.issue)}</small></li>
-      `;
-    } else {
-      refs.missingList.className = "line-kpi-card-grid";
-      refs.missingList.innerHTML = `
-        <li><span>Line LBE</span><strong>${lineKpi.lbe.toFixed(1)}%</strong><small>from Page 5 station plan</small></li>
-        <li><span>Total HC</span><strong>${lineKpi.totalHc.toFixed(1)}</strong><small>planned resource</small></li>
-        <li><span>Bottleneck CT</span><strong>${lineKpi.bottleneckCt.toFixed(0)}s</strong><small>slowest station</small></li>
-        <li><span>Space</span><strong>${totalArea.toFixed(1)}m²</strong><small>total station footprint</small></li>
-      `;
-    }
-  }
-  setText(refs.evidenceTitle, selected ? "Station Info from Page 5" : "Layout Source");
-  if (refs.evidenceList) {
-    if (selected) {
-      refs.evidenceList.className = "layout-station-workflows";
-      const targetCt = Number(ctCalculatorState.targetCt) || 58;
-      const stationLoad = targetCt ? ((Number(selected.station.time) || 0) / targetCt) * 100 : 0;
-      const workflowCards = selected.station.steps.length
-        ? selected.station.steps
-            .map((stepId) => {
-              const macro = getMacroStep(stepId);
-              const aiStep = getStepById(stepId);
-              const microRows = macro?.microSteps || [];
-              return `
-                <div class="layout-workflow-item">
-                  <header>
-                    <b>${formatStepId(stepId)}</b>
-                    <span>${escapeHtml(macro?.title || aiStep?.process || "Unmapped workflow")}</span>
-                    <small>${microRows.length} detailed step(s)</small>
-                  </header>
-                  <div class="layout-workflow-steps">
-                    ${
-                      microRows.length
-                        ? microRows
-                            .map(
-                              (microStep, index) => `
-                                <div>
-                                  <b>${formatStepId(stepId)}.${String(index + 1).padStart(2, "0")}</b>
-                                  <span>${escapeHtml(microStep[7] || "M")}</span>
-                                  <small>${escapeHtml(microStep[0])}</small>
-                                  <em>${escapeHtml(microStep[8] || aiStep?.material || "TBD")}</em>
-                                </div>
-                              `,
-                            )
-                            .join("")
-                        : `<div class="layout-workflow-empty">No detailed steps assigned.</div>`
-                    }
-                  </div>
-                </div>
-              `;
-            })
-            .join("")
-        : `<div class="layout-workflow-empty">No SOP workflow assigned yet.</div>`;
-      refs.evidenceList.innerHTML = `
-        <div class="layout-station-summary-card">
-          <div><span>Station</span><strong>${escapeHtml(selected.station.id)}</strong></div>
-          <div><span>Automation</span><strong>${selected.station.automation ? "A" : "M"}</strong></div>
-          <div><span>HC</span><strong>${escapeHtml(selected.station.hc)}</strong></div>
-          <div><span>CT</span><strong>${selected.station.time}s</strong></div>
-          <div><span>Load</span><strong>${stationLoad.toFixed(0)}%</strong></div>
-          <div><span>Status</span><strong>${stationStateLabel(selected.station.state)}</strong></div>
-          <p>${escapeHtml(selected.station.note || "No station note")}</p>
-          <small>${escapeHtml(selected.station.issue || "No station issue")}</small>
-        </div>
-        ${workflowCards}
-      `;
-    } else {
-    refs.evidenceList.className = "timing-exposure-list";
-    refs.evidenceList.innerHTML = `
-        <div class="timing-exposure-row"><b>Station</b><span>Station assignment</span><small>sequence, A/M, HC, assigned steps</small></div>
-        <div class="timing-exposure-row"><b>Size</b><span>Manual dimensions</span><small>Width and Depth from the table below</small></div>
-        <div class="timing-exposure-row warn"><b>Risk</b><span>Quality / space risk</span><small>carried from Station Layout review</small></div>
-      `;
-    }
-  }
+  layoutPage.renderPanel(refs);
 }
 
 function refreshHumanGate() {
@@ -3626,327 +2897,79 @@ function refreshHumanGate() {
 }
 
 function refreshStationDraftFromField(field) {
-  const row = field.closest(".station-edit-row");
-  const station = getActiveStations().find((item) => item.id === row?.dataset.stationId);
-  if (!station) return;
-  const value = field.value.trim();
-  const key = field.dataset.field;
-  if (key === "steps") station.steps = value.split(",").map((item) => item.trim()).filter(Boolean);
-  else if (key === "id") {
-    const previousId = station.id;
-    station.id = value || previousId;
-    row.dataset.stationId = station.id;
-    selectedStationId = station.id;
-  } else if (key === "hc") station.hc = value || "0";
-  else if (key === "note" || key === "issue") station[key] = value;
-  selectStation(station.id);
+  stationPage.refreshStationDraftFromField(field, refs);
 }
 
 function updateStationLayoutFromField(field) {
-  const station = getActiveStations().find((item) => item.id === field.dataset.stationId);
-  if (!station) return;
-  const key = field.dataset.layoutField;
-  if (key === "layoutWidth" || key === "layoutDepth") {
-    station[key] = Math.max(0.5, Number(field.value) || 0.5);
-  } else if (key === "operatorSide") {
-    station.operatorSide = field.value;
-  }
-  selectedStationId = station.id;
-  refs.twinCanvas.innerHTML = renderMappingCanvas();
-  renderMappingPanel();
+  layoutPage.updateStationLayoutFromField(field, refs);
 }
 
 function syncCtCalculatorView(sourceField) {
-  const totalProcessTime = 354;
-  const targetCt = Math.max(1, Number(ctCalculatorState.targetCt) || 1);
-  const totalHc = Math.max(1, Math.round(Number(ctCalculatorState.totalHc) || 1));
-  const generatedHc = Math.ceil(totalProcessTime / targetCt);
-  const generatedCt = totalProcessTime / totalHc;
-  const volumeTargetCt = getVolumeTargetCt();
-
-  if (sourceField?.dataset.ctField === "targetCt") {
-    ctCalculatorState.totalHc = generatedHc;
-    const hcInput = refs.twinCanvas?.querySelector("[data-ct-field='totalHc']");
-    if (hcInput) hcInput.value = ctCalculatorState.totalHc;
-  } else if (sourceField?.dataset.ctField === "totalHc") {
-    ctCalculatorState.targetCt = Number(generatedCt.toFixed(1));
-    const ctInput = refs.twinCanvas?.querySelector("[data-ct-field='targetCt']");
-    if (ctInput) ctInput.value = ctCalculatorState.targetCt;
-  } else if (sourceField && ["dailyVolume", "shiftCount", "shiftHours", "oee"].includes(sourceField.dataset.ctField)) {
-    ctCalculatorState.targetCt = Number(volumeTargetCt.toFixed(1));
-    ctCalculatorState.totalHc = Math.ceil(totalProcessTime / Math.max(0.1, ctCalculatorState.targetCt));
-    const ctInput = refs.twinCanvas?.querySelector("[data-ct-field='targetCt']");
-    const hcInput = refs.twinCanvas?.querySelector("[data-ct-field='totalHc']");
-    if (ctInput) ctInput.value = ctCalculatorState.targetCt;
-    if (hcInput) hcInput.value = ctCalculatorState.totalHc;
-  }
-
-  const hcResult = refs.twinCanvas?.querySelector("[data-ct-result='hc']");
-  const ctResult = refs.twinCanvas?.querySelector("[data-ct-result='ct']");
-  const volumeCtResult = refs.twinCanvas?.querySelector("[data-ct-result='volumeCt']");
-  const hcFormula = refs.twinCanvas?.querySelector("[data-ct-formula='hc']");
-  const ctFormula = refs.twinCanvas?.querySelector("[data-ct-formula='ct']");
-  const volumeCtFormula = refs.twinCanvas?.querySelector("[data-ct-formula='volumeCt']");
-  refs.twinCanvas?.querySelectorAll(".ct-mode-card").forEach((card) => card.classList.remove("active"));
-  sourceField?.closest(".ct-mode-card")?.classList.add("active");
-  if (hcResult) hcResult.textContent = String(Math.ceil(totalProcessTime / Math.max(1, Number(ctCalculatorState.targetCt) || 1)));
-  if (ctResult) ctResult.textContent = (totalProcessTime / Math.max(1, Math.round(Number(ctCalculatorState.totalHc) || 1))).toFixed(1);
-  if (volumeCtResult) volumeCtResult.textContent = getVolumeTargetCt().toFixed(1);
-  if (hcFormula) hcFormula.textContent = `${totalProcessTime}s / ${Number(ctCalculatorState.targetCt).toFixed(1)}s`;
-  if (ctFormula) ctFormula.textContent = `${totalProcessTime}s / ${Math.round(Number(ctCalculatorState.totalHc) || 1)} HC`;
-  if (volumeCtFormula) volumeCtFormula.textContent = `${ctCalculatorState.shiftCount} × ${ctCalculatorState.shiftHours}h × 3600 × ${ctCalculatorState.oee}% / ${ctCalculatorState.dailyVolume}`;
+  ctCalculationPage.syncCalculatorView(sourceField);
 }
 
 function updateCtCalculator(field) {
-  const key = field.dataset.ctField;
-  const value = Number(field.value);
-  if (key === "targetCt") {
-    ctInputMode = "ct";
-    ctCalculatorState.targetCt = Math.max(1, value || 1);
-  } else if (key === "totalHc") {
-    ctInputMode = "hc";
-    ctCalculatorState.totalHc = Math.max(1, Math.round(value || 1));
-  } else if (["dailyVolume", "shiftCount", "shiftHours", "oee"].includes(key)) {
-    ctInputMode = "volume";
-    const minValue = key === "shiftHours" ? 0.1 : 1;
-    ctCalculatorState[key] = Math.max(minValue, value || minValue);
-  }
-  syncCtCalculatorView(field);
-  renderCtPanel();
-}
-
-function saveCtCalculatorInput(field) {
-  const key = field.dataset.ctField;
-  const value = Number(field.value);
-  if (key === "targetCt") {
-    ctInputMode = "ct";
-    ctCalculatorState.targetCt = Math.max(1, value || 1);
-  } else if (key === "totalHc") {
-    ctInputMode = "hc";
-    ctCalculatorState.totalHc = Math.max(1, Math.round(value || 1));
-  } else if (["dailyVolume", "shiftCount", "shiftHours", "oee"].includes(key)) {
-    ctInputMode = "volume";
-    const minValue = key === "shiftHours" ? 0.1 : 1;
-    ctCalculatorState[key] = Math.max(minValue, value || minValue);
-  }
+  ctCalculationPage.updateCalculator(field);
 }
 
 function bindCtCalculatorInputs() {
-  refs.twinCanvas?.querySelectorAll(".ct-calc-input").forEach((field) => {
-    field.addEventListener("input", () => updateCtCalculator(field));
-    field.addEventListener("change", () => updateCtCalculator(field));
-  });
+  ctCalculationPage.bind(refs.twinCanvas);
 }
 
 function bindMiImageUploads() {
-  refs.twinCanvas?.querySelectorAll("[data-mi-image-station]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const station = getActiveStations().find((item) => item.id === input.dataset.miImageStation);
-      const file = input.files?.[0];
-      if (!station || !file) return;
-      station.miImageName = file.name;
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.addEventListener("load", () => {
-          station.miImageUrl = String(reader.result || "");
-          renderStage("output");
-        });
-        reader.readAsDataURL(file);
-      } else {
-        station.miImageUrl = "";
-        renderStage("output");
-      }
-    });
-  });
-  refs.twinCanvas?.querySelectorAll("[data-mi-risk-station]").forEach((field) => {
-    field.addEventListener("input", () => updateMiQualityRisk(field));
-    field.addEventListener("change", () => updateMiQualityRisk(field));
-  });
-  refs.twinCanvas?.querySelectorAll("[data-mi-ctq-station]").forEach((field) => {
-    field.addEventListener("input", () => updateMiCtq(field));
-    field.addEventListener("change", () => updateMiCtq(field));
-  });
+  miOutputPage.bind(refs);
 }
 
 function updateMiCtq(field) {
-  const station = getActiveStations().find((item) => item.id === field.dataset.miCtqStation);
-  if (!station) return;
-  station.miCtq = field.value;
+  miOutputPage.updateCtq(field);
 }
 
 function updateMiQualityRisk(field) {
-  const station = getActiveStations().find((item) => item.id === field.dataset.miRiskStation);
-  const index = Number(field.dataset.miRiskIndex);
-  if (!station || !Number.isFinite(index)) return;
-  getStationQualityRiskRows(station);
-  station.miQualityRisks[index] = field.value;
+  miOutputPage.updateQualityRisk(field);
 }
 
 function csvEscape(value) {
-  const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return miOutputPage.csvEscape(value);
 }
 
 function getMiExportRows() {
-  const rows = [["Station", "Station Time (secs)", "HC", "Status", "Assigned Steps", "Issue", "CTQ", "Quality Risk 1", "Quality Risk 2", "Quality Risk 3", "Uploaded Image"]];
-  getActiveStations().forEach((station) => {
-    const risks = getStationQualityRiskRows(station);
-    rows.push([
-      station.id,
-      station.time,
-      station.hc,
-      stationStateLabel(station.state),
-      station.steps.join(" / "),
-      station.issue,
-      station.miCtq || "",
-      risks[0],
-      risks[1],
-      risks[2],
-      station.miImageName || "",
-    ]);
-  });
-  return rows;
+  return miOutputPage.getExportRows();
 }
 
 function exportMiExcel() {
-  const csv = getMiExportRows().map((row) => row.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "mi_package_output.csv";
-  link.click();
-  URL.revokeObjectURL(url);
-  showToast("MI Package Output exported for Excel");
+  miOutputPage.exportExcel();
 }
 
 function renderMiExportPanel() {
-  setText(refs.aiStepTitle, "Excel Export");
-  setText(refs.confidence, "MI");
-  setText(refs.aiReason, "Export the current MI Package Output station summary for Excel review. This export is only available on this page.");
-  if (refs.missingList) {
-    refs.missingList.innerHTML = `
-      <li>${getActiveStations().length} station row(s)</li>
-      <li>Includes station time, HC, assigned steps, issue, and uploaded image file name</li>
-      <li>Downloaded as CSV and can be opened in Excel</li>
-    `;
-  }
-  setText(refs.evidenceTitle, "Export Action");
-  if (refs.evidenceList) {
-    refs.evidenceList.className = "mi-export-panel";
-    refs.evidenceList.innerHTML = `<button class="mi-export-excel" type="button" data-action="export-mi-excel">Export Excel</button>`;
-    refs.evidenceList.querySelector("[data-action='export-mi-excel']")?.addEventListener("click", exportMiExcel);
-  }
+  miOutputPage.renderPanel(refs);
 }
 
 function beginStationEdit(stationId) {
-  const station = getStationDraft(stationId);
-  if (!station) return;
-  station.editing = true;
-  selectedStationId = station.id;
-  renderStage("station");
+  stationPage.beginStationEdit(stationId);
 }
 
 function addStationDraft() {
-  const stations = getActiveStations();
-  const maxStationNumber = stations.reduce((max, station) => {
-    const match = station.id.match(/\d+/);
-    return Math.max(max, match ? Number(match[0]) : 0);
-  }, 0);
-  const id = `ST${String(maxStationNumber + 1).padStart(2, "0")}`;
-  const station = {
-    id,
-    time: 0,
-    hc: "1.0",
-    state: "light",
-    steps: [],
-    note: "New station work content",
-    issue: "Manual station added",
-    editing: true,
-  };
-  const baseline = stationSnapshot(station);
-  station.aiBaseline = { ...baseline };
-  station.lastSubmitted = { ...baseline };
-  station.trace = [];
-  stations.push(station);
-  selectedStationId = id;
-  renderStage("station");
-  showToast(`${id} added`);
+  stationPage.addStationDraft();
 }
 
 function deleteSelectedStation() {
-  if (!selectedStationId) return;
-  const stations = getActiveStations();
-  const index = stations.findIndex((station) => station.id === selectedStationId);
-  if (index < 0) return;
-  if (stations[index].automation) {
-    showToast("AUTO station is generated from A steps and cannot be deleted");
-    return;
-  }
-  const [removed] = stations.splice(index, 1);
-  selectedStationId = stations[Math.max(0, index - 1)]?.id || stations[0]?.id || "";
-  renderStage("station");
-  showToast(`${removed.id} deleted`);
+  stationPage.deleteSelectedStation();
 }
 
 function cancelStationEdit(stationId) {
-  const station = getStationDraft(stationId);
-  if (!station) return;
-  applyStationSnapshot(station, station.lastSubmitted);
-  station.editing = false;
-  selectedStationId = station.id;
-  renderStage("station");
-  showToast(`${station.id} changes canceled`);
+  stationPage.cancelStationEdit(stationId);
 }
 
 function submitStationOverride(stationId) {
-  const station = getStationDraft(stationId);
-  if (!station) return;
-  const previous = station.lastSubmitted;
-  const current = stationSnapshot(station);
-  const changes = Object.keys(current)
-    .filter((key) => current[key] !== previous[key])
-    .map((key) => ({
-      field: key,
-      label: stationFieldLabels[key] || key,
-      from: previous[key],
-      to: current[key],
-    }));
-
-  station.editing = false;
-
-  if (!changes.length) {
-    renderStage("station");
-    showToast(`${station.id} has no submitted change`);
-    return;
-  }
-
-  const entry = {
-    stationId: current.id,
-    time: new Date().toLocaleString(),
-    changes,
-  };
-
-  station.override = true;
-  station.trace.unshift(entry);
-  stationTraceLog.unshift(entry);
-  station.lastSubmitted = { ...current };
-  selectedStationId = current.id;
-  renderStage("station");
-  showToast(`${current.id} override submitted and traced`);
+  stationPage.submitStationOverride(stationId);
 }
 
 function selectStation(stationId) {
-  selectedStationId = stationId;
-  refs.twinCanvas?.querySelectorAll("[data-station-id]").forEach((node) => {
-    node.classList.toggle("active", node.dataset.stationId === selectedStationId);
-  });
-  renderStationPanel();
+  stationPage.selectStation(stationId, refs);
 }
 
 function selectLayoutStation(stationId) {
-  selectedStationId = stationId;
-  renderStage("mapping");
+  layoutPage.selectLayoutStation(stationId);
 }
 
 function selectMappingRow(mappingId) {
@@ -4090,14 +3113,12 @@ function renderStage(stageKey) {
     bindSopFlowInteractions();
   }
 
+  if (stageKey === "inputs") {
+    bindInputUploads();
+  }
+
   if (stageKey === "steps") {
-    refs.twinCanvas?.querySelectorAll(".area-step-card").forEach((card) => {
-      card.addEventListener("click", () => {
-        selectedMacroStepId = card.dataset.sopId;
-        selectedStepId = selectedMacroStepId;
-        renderStage("steps");
-      });
-    });
+    processTimePage.bind(refs.twinCanvas);
   }
 
   if (stageKey === "human") {
@@ -4117,70 +3138,12 @@ function renderStage(stageKey) {
   }
 
   if (stageKey === "station") {
-    refs.twinCanvas?.querySelectorAll("[data-action='select-station-plan']").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        selectStationPlan(button.dataset.planId);
-      });
-    });
-    refs.twinCanvas?.querySelector("[data-action='add-station']")?.addEventListener("click", addStationDraft);
-    refs.twinCanvas?.querySelector("[data-action='select-delete-station']")?.addEventListener("change", (event) => {
-      selectedStationId = event.target.value;
-      renderStage("station");
-    });
-    refs.twinCanvas?.querySelector("[data-action='delete-station']")?.addEventListener("click", deleteSelectedStation);
-    refs.twinCanvas?.querySelectorAll(".station-expand-toggle").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const stationId = button.dataset.stationId;
-        expandedStations[stationId] = !expandedStations[stationId];
-        selectedStationId = stationId;
-        renderStage("station");
-      });
-    });
-    refs.twinCanvas?.querySelectorAll(".station-workflow-toggle").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const key = `${button.dataset.stationId}:${button.dataset.stepId}`;
-        expandedStationWorkflows[key] = !expandedStationWorkflows[key];
-        selectedStationId = button.dataset.stationId;
-        renderStage("station");
-      });
-    });
-    refs.twinCanvas?.querySelectorAll(".station-edit-row[data-station-id]").forEach((stationNode) => {
-      stationNode.addEventListener("click", () => selectStation(stationNode.dataset.stationId));
-    });
-    refs.twinCanvas?.querySelectorAll(".station-action").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const row = button.closest(".station-edit-row");
-        const stationId = row?.dataset.stationId;
-        if (!stationId) return;
-        if (button.dataset.action === "edit") beginStationEdit(stationId);
-        if (button.dataset.action === "submit") submitStationOverride(stationId);
-      });
-    });
-    refs.twinCanvas?.querySelectorAll(".station-edit-row input, .station-edit-row textarea, .station-edit-row select").forEach((field) => {
-      field.addEventListener("focus", () => {
-        const row = field.closest(".station-edit-row");
-        if (row) selectStation(row.dataset.stationId);
-      });
-      field.addEventListener("input", () => refreshStationDraftFromField(field));
-      field.addEventListener("change", () => refreshStationDraftFromField(field));
-    });
+    if (stationPlanState.status !== "idle") bindAiStationCanvas();
+    else stationPage.bindCanvas(refs);
   }
 
   if (stageKey === "mapping") {
-    refs.twinCanvas?.querySelectorAll(".layout-svg-station[data-station-id]").forEach((stationNode) => {
-      stationNode.addEventListener("click", () => selectLayoutStation(stationNode.dataset.stationId));
-      stationNode.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          selectLayoutStation(stationNode.dataset.stationId);
-        }
-      });
-    });
-    renderMappingPanel();
+    layoutPage.bindCanvas(refs);
   }
 
   if (stageKey === "output") {
@@ -4194,29 +3157,8 @@ function renderStage(stageKey) {
 
   if (stageKey === "inputs") renderInputPanel();
   else if (stage.sideMode === "parsedArtifacts") renderParsePanel();
-  else if (stage.sideMode === "stepTiming") {
-    const selectedMacro = getMacroStep();
-    const totalChanges = microChangeStats.added + microChangeStats.deleted + microChangeStats.moved;
-    setText(refs.aiStepTitle, `Step ${formatStepId(selectedMacro.id)} · ${selectedMacro.title}`);
-    setText(refs.confidence, `${totalChanges}`);
-    setText(refs.aiReason, `Track manual changes made in the step XLSX table: added rows, deleted rows, and row order changes.`);
-    if (refs.missingList) {
-      refs.missingList.innerHTML = `
-        <li>${microChangeStats.added} step(s) added manually</li>
-        <li>${microChangeStats.deleted} step(s) deleted manually</li>
-        <li>${microChangeStats.moved} step(s) moved to a new position</li>
-      `;
-    }
-    setText(refs.evidenceTitle, "Step Change Summary");
-    if (refs.evidenceList) {
-      refs.evidenceList.className = "timing-exposure-list";
-      refs.evidenceList.innerHTML = `
-        <div class="timing-exposure-row"><b>${microChangeStats.added}</b><span>Added</span><small>new step rows inserted</small></div>
-        <div class="timing-exposure-row warn"><b>${microChangeStats.deleted}</b><span>Deleted</span><small>step rows removed</small></div>
-        <div class="timing-exposure-row"><b>${microChangeStats.moved}</b><span>Moved</span><small>rows reordered within the table</small></div>
-      `;
-    }
-  } else if (stage.sideMode === "humanGate") renderHumanGatePanel();
+  else if (stage.sideMode === "stepTiming") processTimePage.renderPanel(refs);
+  else if (stage.sideMode === "humanGate") renderHumanGatePanel();
   else if (stage.sideMode === "ctCalc") renderCtPanel();
   else if (stage.sideMode === "stationBalance") renderStationPanel();
   else if (stageKey === "mapping") renderMappingPanel();
@@ -4265,9 +3207,90 @@ function saveCurrentDraft() {
   showToast(`${stages[currentStageKey].title} draft saved`);
 }
 
+// Page 05 station plan: tracks the CT/HC snapshot the current plan was generated from,
+// so we can flag the plan as stale if the user goes back and changes CT on Page 04.
+const stationPlanState = {
+  status: "idle", // idle | generating | ready | failed
+  message: "",
+  ctSnapshot: null,
+  hcSnapshot: null,
+  plans: [], // AI-balanced station plans (Plan A / Plan B) with computed IE metrics
+  selectedPlanIndex: null, // null = compare mode; number = locked-in plan
+};
+
+function goToStage(stageKey) {
+  $$(".flow-item").forEach((node) => node.classList.toggle("active", node.dataset.stage === stageKey));
+  renderStage(stageKey);
+}
+
+// Collect the data contract handed from Page 04 → Page 05 for AI station balancing.
+function collectStationPlanInput() {
+  const targetCt = Number(ctCalculatorState.targetCt) || 0;
+  const totalHc = Number(ctCalculatorState.totalHc) || 0;
+  const steps = sopMacroSteps.flatMap((macro) =>
+    (macro.microSteps || []).map((microStep, index) => ({
+      workflowId: macro.id,
+      workflow: macro.title,
+      stepNo: `${formatStepId(macro.id)}.${String(index + 1).padStart(2, "0")}`,
+      description: microStep[0],
+      automation: getMicroAutomation(microStep),
+      actualPt: getActualPt(microStep, index),
+    })),
+  );
+  return { targetCt, totalHc, steps };
+}
+
+async function generateStationPlan() {
+  const input = collectStationPlanInput();
+  if (!input.steps.length) {
+    showToast("Parse and review steps before generating a station plan");
+    return;
+  }
+  if (!input.targetCt) {
+    showToast("Set a target CT on Page 04 first");
+    return;
+  }
+
+  stationPlanState.status = "generating";
+  stationPlanState.message = `AI is balancing ${input.steps.length} step(s) into stations at target CT ${input.targetCt}s...`;
+  stationPlanState.ctSnapshot = input.targetCt;
+  stationPlanState.hcSnapshot = input.totalHc;
+  stationPlanState.selectedPlanIndex = null; // start in compare mode
+  goToStage("station");
+
+  try {
+    const result = await inputFilesApi.generateStations(input);
+    stationPlanState.plans = Array.isArray(result.plans) ? result.plans : [];
+    if (!stationPlanState.plans.length) throw new Error("AI returned no station plans");
+    stationPlanState.status = "ready";
+    const best = stationPlanState.plans.reduce((a, b) => (b.lbr > a.lbr ? b : a));
+    stationPlanState.message = `${stationPlanState.plans.length} plan(s) generated · best LBR ${best.lbr}% at CT ${input.targetCt}s`;
+  } catch (error) {
+    stationPlanState.status = "failed";
+    stationPlanState.message = error.message || "Station generation failed";
+    console.warn(error);
+  }
+  if (currentStageKey === "station") renderStage("station");
+}
+
+function isStationPlanStale() {
+  if (stationPlanState.status !== "ready") return false;
+  return Number(ctCalculatorState.targetCt) !== stationPlanState.ctSnapshot
+    || Number(ctCalculatorState.totalHc) !== stationPlanState.hcSnapshot;
+}
+
 function continueToNextStage() {
   if (requiresDraftSave() && !draftSavedByStage[currentStageKey]) {
     showToast("Save draft before continuing");
+    return;
+  }
+  if (currentStageKey === "inputs" && !inputPage.hasCompletedParse()) {
+    showToast("Parse uploaded inputs before continuing");
+    return;
+  }
+  // From CT Calculation, "Continue" triggers AI station balancing (with loading) into Page 05.
+  if (currentStageKey === "time") {
+    generateStationPlan();
     return;
   }
   const currentIndex = stageFlow.indexOf(currentStageKey);
@@ -4395,3 +3418,4 @@ function bindEvents() {
 
 bindEvents();
 renderStage("inputs");
+refreshInputUploadStatus();

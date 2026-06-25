@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Manufacturing Process Editor</title>
-    <link rel="stylesheet" href="styles.css?v=20260607-remove-human-constraints" />
+    <link rel="stylesheet" href="styles.css?v=20260625f" />
     <link rel="stylesheet" href="design-polish.css?v=20260610" />
   </head>
   <body>
@@ -13,7 +13,7 @@
         <div class="brand">
           <div class="brand-mark">MP</div>
           <div>
-            <div class="product-name">Assembly Process Editor</div>
+            <div class="product-name">Assembly Process Editor <span style="background:#13b997;color:#fff;font-size:11px;font-weight:900;padding:2px 8px;border-radius:6px;margin-left:8px;">BUILD 0625h</span></div>
             <div class="project-name">XPS-14 Thermal Module Assembly · Rev B03</div>
           </div>
         </div>
@@ -279,6 +279,17 @@
       </main>
     </div>
 
-    <script src="app.js?v=20260607-remove-human-constraints"></script>
+    <script src="src/api/input-files-api.js?v=20260625d"></script>
+    <script src="src/state/input-upload-state.js?v=20260615"></script>
+    <script src="src/components/ai-panel.js?v=20260616"></script>
+    <script src="src/components/workflow-table.js?v=20260625b"></script>
+    <script src="src/pages/input-page.js?v=20260625b"></script>
+    <script src="src/pages/process-step-page.js?v=20260615"></script>
+    <script src="src/pages/process-time-page.js?v=20260617"></script>
+    <script src="src/pages/ct-calculation-page.js?v=20260625b"></script>
+    <script src="src/pages/station-page.js?v=20260617"></script>
+    <script src="src/pages/layout-page.js?v=20260617"></script>
+    <script src="src/pages/mi-output-page.js?v=20260617"></script>
+    <script src="app.js?v=20260625h"></script>
   </body>
 </html>

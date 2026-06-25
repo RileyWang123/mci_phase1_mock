@@ -650,11 +650,107 @@ h1 {
 
 .input-intake-hero,
 .upload-slot-card,
-.upload-note-strip {
+.upload-note-strip,
+.upload-queue-card {
   border: 1px solid rgba(74, 103, 124, 0.14);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: 0 18px 38px rgba(52, 86, 109, 0.08);
+}
+
+.upload-queue-card {
+  padding: 16px;
+}
+
+.upload-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.upload-queue-head b {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.upload-queue-head span {
+  display: block;
+  margin-top: 4px;
+  color: #8391a1;
+  font-size: 12px;
+}
+
+.upload-queue-head button {
+  flex: none;
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.upload-queue-head button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.upload-queue-list {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-queue-selectall {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #536272;
+  cursor: pointer;
+}
+
+.upload-queue-list li {
+  display: grid;
+  grid-template-columns: 18px 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(74, 103, 124, 0.05);
+  font-size: 12px;
+}
+
+.upload-queue-check {
+  cursor: pointer;
+}
+
+.upload-queue-index {
+  color: var(--mint);
+  font-weight: 900;
+  text-align: center;
+}
+
+.upload-queue-name {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-queue-size {
+  color: #8391a1;
 }
 
 .input-intake-hero {
@@ -1268,7 +1364,8 @@ textarea.sop-step-input {
 
 .micro-add-step,
 .micro-delete-step,
-.micro-confirm-step {
+.micro-confirm-step,
+.micro-export-step {
   padding: 8px 10px;
   border: 0;
   border-radius: 999px;
@@ -1277,6 +1374,245 @@ textarea.sop-step-input {
   font-size: 11px;
   font-weight: 950;
   cursor: pointer;
+}
+
+.step-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.generate-station-btn {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.station-plan-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(19, 185, 151, 0.10);
+  color: #2c6e60;
+}
+
+.station-plan-status.generating {
+  background: rgba(74, 103, 124, 0.10);
+  color: #4a677c;
+}
+
+.station-plan-status.stale,
+.station-plan-status.failed {
+  background: rgba(214, 96, 77, 0.12);
+  color: #b0432f;
+}
+
+.station-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  margin-right: 4px;
+  border: 2px solid rgba(74, 103, 124, 0.3);
+  border-top-color: #4a677c;
+  border-radius: 50%;
+  animation: station-spin 0.7s linear infinite;
+}
+
+@keyframes station-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-station-loading,
+.ai-station-failed {
+  padding: 24px;
+  font-size: 13px;
+  color: #4a677c;
+}
+.ai-station-failed { color: #b0432f; }
+
+.ai-station-board {
+  display: grid;
+  gap: 16px;
+}
+
+.ai-plan-compare-hint {
+  font-size: 12px;
+  color: #536272;
+  padding: 4px 2px 0;
+}
+
+.ai-plan-card {
+  border: 1px solid rgba(74, 103, 124, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ai-plan-card.recommended { border-color: rgba(19, 185, 151, 0.5); }
+.ai-plan-card.selected { border-color: var(--mint); box-shadow: 0 0 0 2px rgba(19, 185, 151, 0.25); }
+
+.ai-plan-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 6px;
+  vertical-align: 2px;
+  background: rgba(19, 185, 151, 0.15);
+  color: #2c6e60;
+}
+.ai-plan-tag.selected { background: var(--mint); color: #fff; }
+
+.ai-plan-select-btn {
+  margin-top: 12px;
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.ai-plan-lockbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(19, 185, 151, 0.12);
+  font-size: 13px;
+  color: #2c6e60;
+}
+.ai-plan-lockbar b { color: var(--ink); }
+
+.ai-plan-compare-btn,
+.ai-plan-switch-btn {
+  border: 1px solid rgba(74, 103, 124, 0.3);
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #4a677c;
+  cursor: pointer;
+}
+
+.ai-plan-alt-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px dashed rgba(74, 103, 124, 0.3);
+  border-radius: 12px;
+  font-size: 12px;
+  color: #8391a1;
+}
+.ai-plan-alt-bar b { color: #536272; }
+
+/* Folded alternative plan card (locked mode) — thin dashed bar, reuses legacy card grid. */
+.station-plan-card.folded {
+  grid-template-rows: auto !important;
+  min-height: 0;
+  padding: 10px 14px;
+  border-style: dashed;
+  opacity: 0.8;
+}
+.station-plan-card.folded span { font-size: 12px; }
+.station-plan-card.folded em { font-style: normal; font-size: 11px; color: #8391a1; }
+
+.ai-plan-station-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.ai-plan-station-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8391a1;
+  border-bottom: 1px solid rgba(74, 103, 124, 0.14);
+}
+.ai-plan-station-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(74, 103, 124, 0.08);
+  vertical-align: top;
+}
+.ai-plan-station-table td b { color: var(--ink); }
+.ai-plan-station-table .process-cell small {
+  display: block;
+  color: #8391a1;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.ai-plan-station-table .time-cell { color: var(--ink); }
+.ai-plan-station-table tr.station-row-over .time-cell { color: #b0432f; }
+
+.ai-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.ai-plan-head b { font-size: 15px; color: var(--ink); }
+.ai-plan-head span { display: block; font-size: 12px; color: #8391a1; margin-top: 2px; }
+
+.ai-plan-kpis { display: flex; gap: 14px; }
+.ai-plan-kpis em { display: grid; text-align: right; font-style: normal; }
+.ai-plan-kpis i { font-style: normal; font-size: 10px; color: #8391a1; text-transform: uppercase; }
+.ai-plan-kpis strong { font-size: 16px; color: var(--mint); }
+
+.ai-plan-stations {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.ai-plan-station {
+  border: 1px solid rgba(74, 103, 124, 0.14);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(19, 185, 151, 0.05);
+}
+.ai-plan-station.over { background: rgba(214, 96, 77, 0.10); border-color: rgba(214, 96, 77, 0.3); }
+
+.ai-plan-station-head { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ai-plan-station-head b { color: var(--ink); }
+.ai-plan-station-head strong { margin-left: auto; color: var(--ink); }
+.ai-plan-station-head em { font-style: normal; color: #8391a1; font-size: 10px; }
+.ai-plan-station-name { font-size: 12px; color: #536272; margin: 6px 0; }
+.ai-plan-station-steps { display: flex; flex-wrap: wrap; gap: 4px; }
+.ai-plan-station-steps span {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(74, 103, 124, 0.1);
+  color: #4a677c;
+}
+
+.micro-export-step {
+  background: var(--ink);
 }
 
 .micro-delete-step {
@@ -1391,6 +1727,17 @@ textarea.sop-step-input {
   color: var(--muted);
   text-align: center;
   font-weight: 850;
+}
+
+.sop-empty-state {
+  width: 100%;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.72);
+  font-weight: 850;
+  text-align: center;
 }
 
 .workflow-breakdown-row td {
