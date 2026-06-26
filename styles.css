@@ -1526,6 +1526,18 @@ textarea.sop-step-input {
 }
 .ai-plan-alt-bar b { color: #536272; }
 
+.station-compare-btn {
+  margin-top: 8px;
+  border: 1px solid rgba(74, 103, 124, 0.3);
+  background: #fff;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #4a677c;
+  cursor: pointer;
+}
+
 /* Folded alternative plan card (locked mode) — thin dashed bar, reuses legacy card grid. */
 .station-plan-card.folded {
   grid-template-rows: auto !important;
@@ -3085,9 +3097,26 @@ textarea.workflow-edit-field {
 .station-edit-head,
 .station-edit-row {
   display: grid;
-  grid-template-columns: 112px 72px minmax(180px, 1fr) 58px minmax(128px, 0.72fr);
+  grid-template-columns: 112px 72px minmax(160px, 1fr) 64px 58px minmax(120px, 0.72fr);
   gap: 8px;
   align-items: stretch;
+}
+
+.station-time-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 10px;
+  background: rgba(19, 185, 151, 0.10);
+  color: #2c6e60;
+  font-weight: 900;
+}
+.station-time-cell b { font-size: 17px; }
+.station-time-cell span { font-size: 11px; opacity: 0.7; }
+.station-time-cell.over {
+  background: rgba(214, 96, 77, 0.14);
+  color: #b0432f;
 }
 
 .station-edit-head {

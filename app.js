@@ -856,24 +856,11 @@ const inputSources = [
 
 const uploadSourceNames = ["Historical MI", "Assembly Video", "MTM Database"];
 
-const stationDraft = [
-  { id: "ST01", time: 54, hc: "1.0", state: "ok", steps: ["010", "020"], note: "Cover removal + thermal module", issue: "Within CT, fixture ID still pending" },
-  { id: "ST02", time: 61, hc: "1.5", state: "over", steps: ["030"], note: "Display cable routing + CTQ photo", issue: "3s over target CT, CTQ photo cannot be dropped" },
-  { id: "ST03", time: 54, hc: "1.0", state: "ok", steps: ["040"], note: "Mainboard placement and connector", issue: "Connector access angle needs station-side check" },
-  { id: "ST04", time: 56, hc: "1.0", state: "ok", steps: ["050", "080"], note: "Battery pack + speaker module", issue: "Battery tray space constraint from human input" },
-  { id: "ST05", time: 50, hc: "1.0", state: "ok", steps: ["060", "090"], note: "Fan sensor + labels", issue: "Label datum rule is human override" },
-  { id: "ST06", time: 57, hc: "1.0", state: "ok", steps: ["070"], note: "Final visual inspection", issue: "CTQ inspection locked for MI" },
-  { id: "ST07", time: 22, hc: "0.5", state: "light", steps: ["100", "110", "120", "130", "140", "150", "160", "170", "180"], note: "Remaining Pista extracted actions", issue: "Station assignment not generated yet; carried forward for MI trace continuity" },
-];
-
-const stationPlanB = [
-  { id: "ST01", time: 50, hc: "1.0", state: "ok", steps: ["010"], note: "Mic / camera preparation", issue: "Lower load manual station" },
-  { id: "ST02", time: 52, hc: "1.0", state: "ok", steps: ["020", "030"], note: "Camera assembly + cable routing", issue: "CTQ photo kept with cable routing" },
-  { id: "ST03", time: 55, hc: "1.0", state: "ok", steps: ["040", "050"], note: "Mainboard + battery pack", issue: "Needs operator side review" },
-  { id: "ST04", time: 48, hc: "1.0", state: "ok", steps: ["060", "070"], note: "Fan sensor + final visual inspection", issue: "Inspection stays manual" },
-  { id: "ST05", time: 43, hc: "1.0", state: "ok", steps: ["080", "090"], note: "Speaker module + labels", issue: "Label datum rule remains human input" },
-  { id: "ST06", time: 36, hc: "0.5", state: "light", steps: ["100", "110", "120", "130", "140", "150", "160", "170", "180"], note: "Remaining Pista actions", issue: "Grouped as low-load finishing station" },
-];
+// Station plans are populated by the AI line-balancing result (Page 05). No hardcoded mock.
+const stationDraft = [];
+const stationPlanB = [];
+// stepNo -> CT(secs), built from the AI input so manual cross-station edits recompute station time.
+const stationStepCt = new Map();
 
 const stationFieldLabels = {
   id: "Station",
@@ -1125,43 +1112,10 @@ function applyVideoInputDemoData(workflows = videoSopWorkflows, sourceFile = nul
     })),
   );
 
-  const stationDraftRows = sourceFile
-    ? parsedWorkflows.map((workflow, index) => buildStationFromParsedWorkflow(workflow, index, sourceName))
-    : [
-        { id: "ST01", time: 49, hc: "1.0", state: "ok", steps: ["010"], note: "左天線上半段組理", issue: "確認天線貼附按壓標準" },
-        { id: "ST02", time: 48, hc: "1.0", state: "ok", steps: ["020"], note: "左天線下半段走線", issue: "確認線纜末端標籤位置" },
-        { id: "ST03", time: 50, hc: "1.0", state: "ok", steps: ["030"], note: "Middle Board 預熱與組裝", issue: "確認熱風槍設定" },
-        { id: "ST04", time: 49, hc: "1.0", state: "ok", steps: ["040"], note: "Middle Board 鎖附", issue: "確認 6 顆螺絲鎖附順序" },
-        { id: "ST05", time: 47, hc: "1.0", state: "ok", steps: ["050"], note: "Camera BRK 預組裝", issue: "確認壓合機台參數" },
-        { id: "ST06", time: 51, hc: "1.0", state: "ok", steps: ["060"], note: "Camera 到 Cover 總裝", issue: "EDP 線對位接近目標 CT" },
-      ];
-  const stationPlanBRows = sourceFile
-    ? parsedWorkflows.map((workflow, index) => ({
-        ...buildStationFromParsedWorkflow(workflow, index, sourceName),
-        issue: "Balanced alternative from parsed SOP; confirm station grouping",
-      }))
-    : [
-        { id: "ST01", time: 52, hc: "1.0", state: "ok", steps: ["010"], note: "左天線上半段組理", issue: "保留原始順序" },
-        { id: "ST02", time: 53, hc: "1.0", state: "ok", steps: ["020", "030"], note: "左天線下半段走線 + Middle Board 預處理", issue: "平衡後的混合人工站" },
-        { id: "ST03", time: 54, hc: "1.0", state: "ok", steps: ["040"], note: "Middle Board 鎖附", issue: "治具站獨立" },
-        { id: "ST04", time: 52, hc: "1.0", state: "ok", steps: ["050"], note: "Camera BRK 預組裝", issue: "壓合機台站獨立" },
-        { id: "ST05", time: 52, hc: "1.0", state: "ok", steps: ["060"], note: "Camera 到 Cover 總裝", issue: "總裝步驟較長" },
-      ];
-
-  stationDraft.splice(
-    0,
-    stationDraft.length,
-    ...stationDraftRows,
-  );
-
-  stationPlanB.splice(
-    0,
-    stationPlanB.length,
-    ...stationPlanBRows,
-  );
-
-  stationDraft.forEach(initializeStationRuntime);
-  stationPlanB.forEach(initializeStationRuntime);
+  // Stations are NOT derived here. They are produced by AI line balancing on Page 05
+  // (Page 04 → Continue → /generate) and mapped into stationDraft / stationPlanB there.
+  stationDraft.splice(0, stationDraft.length);
+  stationPlanB.splice(0, stationPlanB.length);
 }
 
 function applyParsedSopData(parsedResult) {
@@ -1432,6 +1386,7 @@ let selectedMacroStepId = "010";
 let selectedPartArea = "";
 let selectedStationId = "ST01";
 let activeStationPlanId = "planA";
+let stationPlanLocked = false; // false = compare both plans; true = show selected, fold the other
 let stationViewMode = "plan";
 let selectedMappingId = "";
 let currentStageKey = "inputs";
@@ -1612,6 +1567,11 @@ const stationPage = globalThis.MciStationPage.createStationPage({
   applyStationSnapshot,
   updateStationTiming,
   selectStationPlan,
+  getStationPlanLocked: () => stationPlanLocked,
+  unlockStationPlans: () => {
+    stationPlanLocked = false;
+    renderStage("station");
+  },
   renderStationStage: () => renderStage("station"),
   showToast,
 });
@@ -1784,11 +1744,12 @@ function getStationMicroSteps(station, stepId) {
 }
 
 function updateStationTiming(station) {
-  const total = station.steps.reduce((sum, stepId) => {
-    return sum + getStationMicroSteps(station, stepId).reduce((stepSum, { microStep, index }) => stepSum + getActualPt(microStep, index), 0);
-  }, 0);
+  // Station time = sum of CT of its assigned steps (stepNos), looked up from the AI step map.
+  // This makes manual cross-station step moves recompute correctly against the target CT.
+  const targetCt = Number(ctCalculatorState.targetCt) || 58;
+  const total = (station.steps || []).reduce((sum, stepNo) => sum + (stationStepCt.get(stepNo) || 0), 0);
   station.time = Math.round(total);
-  station.state = station.time > 58 ? "over" : station.time === 0 ? "light" : "ok";
+  station.state = station.time > targetCt ? "over" : station.time === 0 ? "light" : "ok";
 }
 
 function syncAutomationStation() {
@@ -1836,7 +1797,8 @@ function syncAutomationStation() {
 }
 
 function syncStationAutomationGrouping() {
-  syncAutomationStation();
+  // Disabled: stations come from AI line balancing (which already groups automation steps),
+  // so the legacy auto-grouping must not mutate the AI-mapped station arrays.
 }
 
 function getMicroFlags(microStep) {
@@ -1919,16 +1881,60 @@ function exportStepsToExcel() {
   };
   const csv = "﻿" + rows.map((row) => row.map(escapeCsv).join(",")).join("\r\n");
 
+  downloadCsv(rows, "process-steps.csv");
+  showToast(`Exported ${rows.length - 1} step row(s) to Excel`);
+}
+
+// Shared CSV download (UTF-8 BOM so Excel renders Chinese correctly).
+function downloadCsv(rows, filename) {
+  const escapeCsv = (value) => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = "﻿" + rows.map((row) => row.map(escapeCsv).join(",")).join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "process-steps.csv";
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  showToast(`Exported ${rows.length - 1} step row(s) to Excel`);
+}
+
+function exportStationPlanToExcel() {
+  const stations = getActiveStations();
+  if (!stations.length) {
+    showToast("No station plan to export yet. Generate a plan first.");
+    return;
+  }
+  const summary = getStationPlanSummary(activeStationPlanId);
+  const targetCt = Number(ctCalculatorState.targetCt) || summary.targetCt || 0;
+
+  const rows = [
+    [`${summary.name}`, `LBE ${summary.lbe.toFixed(1)}%`, `${stations.length} stations`, `Total HC ${summary.totalHc.toFixed(1)}`, `Target CT ${targetCt}s`],
+    [],
+    ["Station", "Automation", "Assigned Steps", "Station Time (secs)", "Target CT (secs)", "Load %", "HC", "Status"],
+  ];
+
+  stations.forEach((station) => {
+    const load = targetCt > 0 ? Math.round((Number(station.time) / targetCt) * 100) : 0;
+    const status = station.state === "over" ? "Over CT" : station.state === "light" ? "Light" : "Within CT";
+    rows.push([
+      station.id,
+      station.automation ? "A" : "M",
+      (station.steps || []).join(" "),
+      station.time,
+      targetCt,
+      `${load}%`,
+      station.hc,
+      status,
+    ]);
+  });
+
+  downloadCsv(rows, `station-plan-${activeStationPlanId}.csv`);
+  showToast(`Exported ${stations.length} station(s) to Excel`);
 }
 
 function getVolumeTargetCt() {
@@ -2104,6 +2110,7 @@ function getStationPlanSummary(planId) {
 function selectStationPlan(planId) {
   if (!stationPlanMeta[planId]) return;
   activeStationPlanId = planId;
+  stationPlanLocked = true; // selecting a plan folds the other into an alternative bar
   const stations = getActiveStations();
   selectedStationId = stations.some((station) => station.id === selectedStationId) ? selectedStationId : stations[0]?.id || "";
   renderStage("station");
@@ -2212,144 +2219,27 @@ function renderStationWorkflowDetails(station) {
 
 // Compact card for compare mode — KPIs + strategy + pick button (no full station detail).
 // Full view reusing the legacy station look: Line Balance Efficiency + CT bar chart + station list.
-function renderAiPlanFullView(plan) {
-  const targetCt = plan.targetCt || 1;
-  const sts = plan.stations.map((s) => s.st);
-  const maxCt = Math.max(targetCt, ...sts, 1);
-  const chartMax = Math.max(10, Math.ceil((maxCt * 1.15) / 10) * 10);
-  const targetLineBottom = Math.min(100, (targetCt / chartMax) * 100);
-  const yTicks = [chartMax, Math.round(chartMax * 0.75), Math.round(chartMax * 0.5), Math.round(chartMax * 0.25), 0];
+const STATION_EMPTY_PROMPT = `<div class="ai-station-loading">No station plan yet. Go to Page 04 (CT Calculation), set a target CT, then click "Continue to Station Balancing Workspace" to generate Plan A / Plan B.</div>`;
 
-  const chart = `
-    <div class="station-ct-chart-card">
-      <div class="station-ct-chart-head">
-        <div><b>Station CT Performance</b><span>X: station · Y: CT (secs)</span></div>
-        <em>Target CT ${targetCt}s</em>
-      </div>
-      <div class="station-ct-chart">
-        <div class="station-ct-y-axis">${yTicks.map((t) => `<span>${t}s</span>`).join("")}</div>
-        <div class="station-ct-plot" style="--target-line-bottom:${targetLineBottom}%;">
-          <div class="station-ct-target-line"><span>Target CT ${targetCt}s</span></div>
-          ${plan.stations
-            .map((s) => {
-              const height = Math.max(2, Math.min(100, (s.st / chartMax) * 100));
-              return `
-                <article class="station-ct-bar ${s.overTarget ? "over-target" : ""}" style="--bar-height:${height}%;">
-                  <div class="station-ct-bar-track"><i></i></div>
-                  <strong>${s.st.toFixed(0)}s</strong>
-                  <span>ST${String(s.stationNo).padStart(2, "0")}</span>
-                </article>`;
-            })
-            .join("")}
-        </div>
-      </div>
-    </div>`;
-
-  const rows = plan.stations
-    .map((s) => {
-      const load = targetCt > 0 ? Math.round((s.st / targetCt) * 100) : 0;
-      const status = s.overTarget ? "Over CT" : "Within CT";
-      const chip = s.overTarget ? "risk-high" : "risk-low";
-      return `
-        <tr class="${s.overTarget ? "station-row-over" : ""}">
-          <td><b>ST${String(s.stationNo).padStart(2, "0")}</b></td>
-          <td><span class="automation-chip ${s.automation === "A" ? "auto" : ""}">${s.automation}</span></td>
-          <td class="process-cell"><strong>${escapeHtml(s.name)}</strong><small>${s.stepNos.join(" · ")}</small></td>
-          <td><strong class="time-cell">${s.st}s</strong></td>
-          <td>${load}%</td>
-          <td><span class="chip ${chip}">${status}</span></td>
-        </tr>`;
-    })
-    .join("");
-
-  return `
-    <div class="station-line-balance-summary">
-      <span>Line Balance Rate · ${escapeHtml(plan.name)}</span>
-      <strong>${plan.lbr}%</strong>
-    </div>
-    ${chart}
-    <table class="ai-plan-station-table">
-      <thead><tr><th>Station</th><th>Auto</th><th>Work content / steps</th><th>ST</th><th>Load</th><th>Status</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-function renderAiStationPlanCanvas() {
+function stationCanvasGate() {
+  // Returns HTML to show INSTEAD of the legacy station view, or null to use the legacy view.
   if (stationPlanState.status === "generating") {
     return `<div class="ai-station-loading"><span class="station-spinner"></span> ${escapeHtml(stationPlanState.message || "Generating station plan…")}</div>`;
   }
   if (stationPlanState.status === "failed") {
     return `<div class="ai-station-failed">Station generation failed: ${escapeHtml(stationPlanState.message || "")}</div>`;
   }
-  const plans = stationPlanState.plans || [];
-  if (!plans.length) return `<div class="ai-station-loading">No station plan yet.</div>`;
-
-  // Recommended = highest LBR (ties → first).
-  const recommendedIndex = plans.reduce((best, p, i) => (p.lbr > plans[best].lbr ? i : best), 0);
-  const selIdx = stationPlanState.selectedPlanIndex;
-
-  const locked = selIdx != null && plans[selIdx];
-  const activeIdx = locked ? selIdx : recommendedIndex;
-
-  // Plan selector cards reuse the legacy .station-plan-card look. Compare mode = both full;
-  // locked mode = selected stays, the other folds into a thin switchable bar.
-  const cards = plans
-    .map((p, i) => {
-      const isActive = i === activeIdx;
-      const folded = locked && !isActive;
-      const stat = `${p.lbr}% LBE · ${p.stationCount} stations · ${p.stationCount.toFixed(1)} HC`;
-      if (folded) {
-        return `<button class="station-plan-card folded" type="button" data-action="select-station-plan-option" data-plan-index="${i}"><span>${escapeHtml(p.name)} · Alternative (folded)</span><em>${stat} — Switch to this</em></button>`;
-      }
-      return `<button class="station-plan-card ${isActive ? "active" : ""}" type="button" data-action="select-station-plan-option" data-plan-index="${i}">
-        <span>${escapeHtml(p.name)}${i === recommendedIndex ? " · Recommended" : ""}</span>
-        <strong>${locked && isActive ? "✓ Selected" : "Tap to select"}</strong>
-        <small>${escapeHtml(p.strategy || "")}</small>
-        <em>${stat}</em>
-      </button>`;
-    })
-    .join("");
-
-  const bar = locked
-    ? `<div class="ai-plan-lockbar"><span>✓ Locked in <b>${escapeHtml(plans[activeIdx].name)}</b> · LBR ${plans[activeIdx].lbr}%</span><button class="ai-plan-compare-btn" type="button" data-action="compare-station-plans">Compare plans again</button></div>`
-    : `<div class="ai-plan-compare-hint">AI generated ${plans.length} balanced plans — click a plan card to lock it in. The other folds into an alternative you can switch back to.</div>`;
-
-  return `
-    <div class="station-board">
-      <section class="station-edit-workspace">
-        <div class="station-plan-grid">${cards}</div>
-        ${bar}
-        ${renderAiPlanFullView(plans[activeIdx])}
-      </section>
-    </div>`;
+  if (!stationDraft.length && !stationPlanB.length) return STATION_EMPTY_PROMPT;
+  return null;
 }
-
-function bindAiStationCanvas() {
-  refs.twinCanvas?.querySelectorAll("[data-action='select-station-plan-option']").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      stationPlanState.selectedPlanIndex = Number(btn.dataset.planIndex);
-      renderStage("station");
-      showToast(`${stationPlanState.plans[stationPlanState.selectedPlanIndex]?.name || "Plan"} locked in`);
-    });
-  });
-  refs.twinCanvas?.querySelector("[data-action='compare-station-plans']")?.addEventListener("click", () => {
-    stationPlanState.selectedPlanIndex = null;
-    renderStage("station");
-  });
-}
-
-const STATION_EMPTY_PROMPT = `<div class="ai-station-loading">No station plan yet. Go to Page 04 (CT Calculation), set a target CT, then click "Continue to Station Balancing Workspace" to generate Plan A / Plan B.</div>`;
 
 function renderStationCanvas() {
-  // Station view is fully AI-driven. No hardcoded mock stations: show the AI plan when
-  // generated, otherwise an empty prompt that points back to Page 04.
-  if (stationPlanState.status !== "idle") return renderAiStationPlanCanvas();
-  return STATION_EMPTY_PROMPT;
+  // Legacy editable station view, now populated by AI-mapped data (no hardcoded mock).
+  return stationCanvasGate() ?? stationPage.renderCanvas();
 }
 
 function renderStationKpiCanvas() {
-  if (stationPlanState.status !== "idle") return renderAiStationPlanCanvas();
-  return STATION_EMPTY_PROMPT;
+  return stationCanvasGate() ?? stationPage.renderKpiCanvas();
 }
 
 function getStationLayoutMeta(station) {
@@ -2502,10 +2392,14 @@ function renderEditorToolbar() {
         <div><h2>Station Plan</h2><p>${escapeHtml(stationPlanState.message || "")}</p></div>
         <div class="station-plan-status ${tone}">
           <span>${status === "generating" ? `<span class="station-spinner"></span> Generating station plan…` : stale ? "CT changed on Page 04 — plan is out of date" : "Plan based on CT " + stationPlanState.ctSnapshot + "s / HC " + stationPlanState.hcSnapshot}</span>
-          ${status !== "generating" && (stale || status === "ready" || status === "failed") ? `<button class="generate-station-btn" type="button" data-action="regenerate-station-plan">Regenerate Plan</button>` : ""}
+          <div class="step-toolbar-actions">
+            ${status === "ready" && (stationDraft.length || stationPlanB.length) ? `<button class="micro-export-step" type="button" data-action="export-station-excel">⤓ Export Excel</button>` : ""}
+            ${status !== "generating" && (stale || status === "ready" || status === "failed") ? `<button class="generate-station-btn" type="button" data-action="regenerate-station-plan">Regenerate Plan</button>` : ""}
+          </div>
         </div>
       `;
       refs.editorContext.querySelector?.("[data-action='regenerate-station-plan']")?.addEventListener("click", generateStationPlan);
+      refs.editorContext.querySelector?.("[data-action='export-station-excel']")?.addEventListener("click", exportStationPlanToExcel);
     }
   } else if (currentStageKey === "mapping") {
     refs.editorContext.innerHTML = `<div><h2>Layout Dimensions</h2><p>Adjust each station block size for the U-shaped layout sketch. Values are front-end mock inputs.</p></div>`;
@@ -2702,40 +2596,14 @@ function renderHumanRows() {
     .join("");
 }
 
-function getActiveAiPlan() {
-  const plans = stationPlanState.plans || [];
-  if (!plans.length) return null;
-  const idx = stationPlanState.selectedPlanIndex ?? plans.reduce((b, p, i) => (p.lbr > plans[b].lbr ? i : b), 0);
-  return plans[idx] || null;
-}
-
 function renderStationRows() {
-  // Driven by the AI plan, never the legacy mock stations.
+  // Legacy station table, populated by AI-mapped stationDraft/stationPlanB. Empty until generated.
   if (!refs.rows) return;
-  const plan = getActiveAiPlan();
-  if (stationPlanState.status === "idle" || !plan) {
+  if (!stationDraft.length && !stationPlanB.length) {
     refs.rows.innerHTML = "";
     return;
   }
-  const targetCt = plan.targetCt || 1;
-  refs.rows.innerHTML = plan.stations
-    .map((s) => {
-      const load = Math.round((s.st / targetCt) * 100);
-      const chip = s.overTarget ? "risk-high" : "risk-low";
-      const status = s.overTarget ? "Over CT" : "Within CT";
-      return `
-        <tr class="${s.overTarget ? "station-row-over" : ""}">
-          <td><b>ST${String(s.stationNo).padStart(2, "0")}</b></td>
-          <td class="process-cell"><strong>${escapeHtml(s.name)}</strong><small>${s.stepNos.join(" · ")}</small></td>
-          <td><strong class="time-cell">${s.st}s</strong></td>
-          <td>${targetCt}s</td>
-          <td>${load}%</td>
-          <td>${s.automation === "A" ? "0.0" : "1.0"}</td>
-          <td class="process-cell"><small>${s.automation === "A" ? "Automated station" : "Manual station"}</small></td>
-          <td><span class="chip ${chip}">${status}</span></td>
-        </tr>`;
-    })
-    .join("");
+  stationPage.renderRows(refs);
 }
 
 function renderLayoutRows() {
@@ -2833,37 +2701,20 @@ function renderCtPanel() {
 }
 
 function renderStationPanel() {
-  // AI-driven; no legacy mock summary.
-  const plan = getActiveAiPlan();
-  if (stationPlanState.status === "idle" || !plan) {
+  // Empty-state panel until AI generates; otherwise the legacy station panel (driven by AI data).
+  if (!stationDraft.length && !stationPlanB.length) {
     globalThis.MciAiPanel.renderPanel(refs, {
       title: "Station Balance · Waiting",
       confidence: "0",
       reason: "No station plan yet. Set a target CT on Page 04 and click Continue to generate Plan A / Plan B.",
       missingItems: ["Generate a plan from Page 04 first"],
-      evidenceTitle: "Line KPI",
+      evidenceTitle: "Station View",
       evidenceClass: "timing-exposure-list",
       evidenceItems: [],
     });
     return;
   }
-  globalThis.MciAiPanel.renderPanel(refs, {
-    title: `Station Balance · ${plan.name}`,
-    confidence: `${plan.lbr}%`,
-    reason: plan.strategy || "AI line balancing result.",
-    missingItems: [
-      `Line Balance Rate: ${plan.lbr}% (loss ${plan.lossRate}%)`,
-      `${plan.stationCount} stations · bottleneck ${plan.bottleneckSt}s · target CT ${plan.targetCt}s`,
-      `${plan.overTargetCount} station(s) over target CT`,
-    ],
-    evidenceTitle: "Line KPI",
-    evidenceClass: "timing-exposure-list",
-    evidenceItems: [
-      { badge: `${plan.lbr}%`, title: "Line Balance Rate", detail: "total CT / (stations × bottleneck)" },
-      { badge: `${plan.stationCount}`, title: "Stations", detail: "planned HC" },
-      { badge: `${plan.bottleneckSt}s`, title: "Bottleneck", detail: "slowest station ST" },
-    ],
-  });
+  stationPage.renderPanel(refs);
 }
 
 function renderStationViewActions() {
@@ -3138,8 +2989,7 @@ function renderStage(stageKey) {
   }
 
   if (stageKey === "station") {
-    if (stationPlanState.status !== "idle") bindAiStationCanvas();
-    else stationPage.bindCanvas(refs);
+    stationPage.bindCanvas(refs);
   }
 
   if (stageKey === "mapping") {
@@ -3204,6 +3054,15 @@ function saveCurrentDraft() {
   if (!requiresDraftSave()) return;
   draftSavedByStage[currentStageKey] = true;
   updateStageActionButtons();
+  // On the station stage, recompute every station's time from its (possibly hand-edited)
+  // steps, then report the recalculated Line Balance score.
+  if (currentStageKey === "station" && (stationDraft.length || stationPlanB.length)) {
+    getActiveStations().forEach(updateStationTiming);
+    const summary = getStationPlanSummary(activeStationPlanId);
+    renderStage("station");
+    showToast(`Draft saved · ${summary.name} Line Balance ${summary.lbe.toFixed(1)}%`);
+    return;
+  }
   showToast(`${stages[currentStageKey].title} draft saved`);
 }
 
@@ -3240,6 +3099,52 @@ function collectStationPlanInput() {
   return { targetCt, totalHc, steps };
 }
 
+// Map the AI line-balancing result into the legacy station model so the existing Page 05
+// view (plan cards, LBE bar, editable rows, KPI chart) renders it. Plan A → stationDraft,
+// Plan B → stationPlanB; metadata + station times come straight from the AI/computed values.
+function mapAiPlansToLegacyStations(input, plans) {
+  // Build stepNo -> CT so manual cross-station moves can recompute station time + LBE.
+  stationStepCt.clear();
+  input.steps.forEach((s) => stationStepCt.set(s.stepNo, Number(s.actualPt) || 0));
+
+  function toLegacyStations(plan) {
+    return plan.stations.map((s, i) => {
+      const isAuto = s.automation === "A";
+      const station = {
+        id: `ST${String(s.stationNo || i + 1).padStart(2, "0")}`,
+        time: Math.round(s.st),
+        hc: isAuto ? "0.0" : "1.0",
+        state: s.overTarget ? "over" : s.st === 0 ? "light" : "ok",
+        steps: [...s.stepNos], // micro-step ids; editable + movable across stations
+        note: s.name,
+        issue: isAuto ? "Automated station (A steps grouped)" : "Manual station",
+        automation: isAuto,
+      };
+      initializeStationRuntime(station);
+      return station;
+    });
+  }
+
+  const planAStations = plans[0] ? toLegacyStations(plans[0]) : [];
+  const planBStations = plans[1] ? toLegacyStations(plans[1]) : [];
+  stationDraft.splice(0, stationDraft.length, ...planAStations);
+  stationPlanB.splice(0, stationPlanB.length, ...planBStations);
+
+  // Plan card labels/descriptions from the AI strategy text.
+  if (plans[0]) {
+    stationPlanMeta.planA.label = "Plan A";
+    stationPlanMeta.planA.description = plans[0].strategy || "AI station balancing plan.";
+  }
+  if (plans[1]) {
+    stationPlanMeta.planB.label = "Plan B";
+    stationPlanMeta.planB.description = plans[1].strategy || "AI station balancing plan.";
+  }
+
+  activeStationPlanId = "planA";
+  stationPlanLocked = false; // start in compare mode (both plans shown)
+  selectedStationId = stationDraft[0]?.id || "";
+}
+
 async function generateStationPlan() {
   const input = collectStationPlanInput();
   if (!input.steps.length) {
@@ -3262,6 +3167,7 @@ async function generateStationPlan() {
     const result = await inputFilesApi.generateStations(input);
     stationPlanState.plans = Array.isArray(result.plans) ? result.plans : [];
     if (!stationPlanState.plans.length) throw new Error("AI returned no station plans");
+    mapAiPlansToLegacyStations(input, stationPlanState.plans);
     stationPlanState.status = "ready";
     const best = stationPlanState.plans.reduce((a, b) => (b.lbr > a.lbr ? b : a));
     stationPlanState.message = `${stationPlanState.plans.length} plan(s) generated · best LBR ${best.lbr}% at CT ${input.targetCt}s`;

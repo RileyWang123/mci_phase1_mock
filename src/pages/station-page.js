@@ -12,6 +12,8 @@
     stationFieldLabels,
     stationTraceLog,
     getActiveStationPlanId,
+    getStationPlanLocked,
+    unlockStationPlans,
     getSelectedStationId,
     getStationViewMode,
     setSelectedStationId,
@@ -38,23 +40,37 @@
   }) {
     function renderPlanCards() {
       const activeStationPlanId = getActiveStationPlanId();
-      return `
-    <div class="station-plan-grid">
-      ${Object.keys(stationPlanMeta)
+      const locked = getStationPlanLocked ? getStationPlanLocked() : false;
+      // Only show plans that actually have stations (avoids an empty Plan B card).
+      const planIds = Object.keys(stationPlanMeta).filter((id) => getStationPlanSummary(id).stations.length);
+
+      const cards = planIds
         .map((planId) => {
           const summary = getStationPlanSummary(planId);
+          const isActive = planId === activeStationPlanId;
+          const stat = `${summary.lbe.toFixed(1)}% LBE · ${summary.stations.length} stations · ${summary.totalHc.toFixed(1)} HC`;
+          if (locked && !isActive) {
+            return `
+            <button class="station-plan-card folded" type="button" data-action="select-station-plan" data-plan-id="${planId}">
+              <span>${summary.name} · Alternative</span>
+              <em>${stat} — Switch to this</em>
+            </button>`;
+          }
           return `
-            <button class="station-plan-card ${planId === activeStationPlanId ? "active" : ""}" type="button" data-action="select-station-plan" data-plan-id="${planId}">
-              <span>${summary.name}</span>
+            <button class="station-plan-card ${isActive ? "active" : ""}" type="button" data-action="select-station-plan" data-plan-id="${planId}">
+              <span>${summary.name}${locked && isActive ? " · Selected" : ""}</span>
               <strong>${summary.label}</strong>
               <small>${summary.description}</small>
-              <em>${summary.lbe.toFixed(1)}% LBE · ${summary.stations.length} stations · ${summary.totalHc.toFixed(1)} HC</em>
-            </button>
-          `;
+              <em>${stat}</em>
+            </button>`;
         })
-        .join("")}
-    </div>
-  `;
+        .join("");
+
+      const compareBtn = locked && planIds.length > 1
+        ? `<button class="station-compare-btn" type="button" data-action="unlock-station-plans">Compare plans</button>`
+        : "";
+
+      return `<div class="station-plan-grid">${cards}</div>${compareBtn}`;
     }
 
     function renderWorkflowDetails(station) {
@@ -120,7 +136,7 @@
           </select>
           <button class="station-table-action danger" type="button" data-action="delete-station" ${selectedStationId ? "" : "disabled"}>Delete Station</button>
         </div>
-        <div class="station-edit-head"><span>Station</span><span>Automation</span><span>Assigned steps</span><span>HC</span><span>Status / Trace</span></div>
+        <div class="station-edit-head"><span>Station</span><span>Automation</span><span>Assigned steps</span><span>CT</span><span>HC</span><span>Status / Trace</span></div>
         ${stations
           .map((station) => {
             const disabled = station.editing ? "" : "disabled";
@@ -135,6 +151,7 @@
                 </div>
                 <div class="station-automation-cell"><span class="automation-chip ${station.automation ? "auto" : ""}">${station.automation ? "A" : "M"}</span></div>
                 <textarea class="station-field" rows="2" data-field="steps" ${disabled}>${station.steps.join(", ")}</textarea>
+                <div class="station-time-cell ${station.state === "over" ? "over" : ""}" data-station-time="${station.id}"><b>${station.time}</b><span>s</span></div>
                 <input class="station-field station-hc-field" data-field="hc" value="${station.hc}" ${disabled} />
                 <div class="station-edit-actions">
                   <div class="station-action-row">
@@ -440,6 +457,14 @@
           .map((item) => item.trim())
           .filter(Boolean);
         updateStationTiming(station);
+        // Live-update this row's time cell + the Line Balance summary without losing textarea focus.
+        const timeCell = row?.querySelector(`[data-station-time="${station.id}"]`);
+        if (timeCell) {
+          timeCell.querySelector("b").textContent = station.time;
+          timeCell.classList.toggle("over", station.state === "over");
+        }
+        const lbeNode = refs.twinCanvas?.querySelector(".station-line-balance-summary strong");
+        if (lbeNode) lbeNode.textContent = `${getStationPlanSummary(getActiveStationPlanId()).lbe.toFixed(1)}%`;
       } else if (key === "id") {
         const previousId = station.id;
         station.id = value || previousId;
@@ -456,6 +481,10 @@
           event.stopPropagation();
           selectStationPlan(button.dataset.planId);
         });
+      });
+      refs.twinCanvas?.querySelector("[data-action='unlock-station-plans']")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        unlockStationPlans?.();
       });
       refs.twinCanvas?.querySelector("[data-action='add-station']")?.addEventListener("click", addStationDraft);
       refs.twinCanvas?.querySelector("[data-action='select-delete-station']")?.addEventListener("change", (event) => {
