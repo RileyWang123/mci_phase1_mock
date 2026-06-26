@@ -2095,7 +2095,10 @@ function getStationPlanSummary(planId) {
   const targetCt = Number(ctCalculatorState.targetCt) || 58;
   const totalHc = stations.reduce((total, station) => total + Number(station.hc), 0);
   const totalWorkContent = stations.reduce((total, station) => total + Number(station.time), 0);
-  const lbe = totalHc ? (totalWorkContent / (totalHc * targetCt)) * 100 : 0;
+  // Textbook Line Balance Rate = total work / (stations × bottleneck) — same formula as the
+  // Python balancer, so the frontend live estimate matches the backend authoritative value.
+  const bottleneck = stations.reduce((max, station) => Math.max(max, Number(station.time) || 0), 0);
+  const lbe = stations.length && bottleneck ? (totalWorkContent / (stations.length * bottleneck)) * 100 : 0;
   return {
     ...stationPlanMeta[planId],
     id: planId,
@@ -3054,16 +3057,51 @@ function saveCurrentDraft() {
   if (!requiresDraftSave()) return;
   draftSavedByStage[currentStageKey] = true;
   updateStageActionButtons();
-  // On the station stage, recompute every station's time from its (possibly hand-edited)
-  // steps, then report the recalculated Line Balance score.
+  // On the station stage, send the (possibly hand-edited) assignment to the backend balancer
+  // for authoritative ST / Line Balance recomputation, then write the result back.
   if (currentStageKey === "station" && (stationDraft.length || stationPlanB.length)) {
-    getActiveStations().forEach(updateStationTiming);
-    const summary = getStationPlanSummary(activeStationPlanId);
-    renderStage("station");
-    showToast(`Draft saved · ${summary.name} Line Balance ${summary.lbe.toFixed(1)}%`);
+    recalculateStationPlanFromBackend();
     return;
   }
   showToast(`${stages[currentStageKey].title} draft saved`);
+}
+
+// Ask the Python balancer to recompute station times + Line Balance from the current
+// (manually edited) assignment. Backend is the single source of truth for the math.
+async function recalculateStationPlanFromBackend() {
+  const stations = getActiveStations();
+  const stepCt = {};
+  stationStepCt.forEach((ct, stepNo) => { stepCt[stepNo] = ct; });
+  const payload = {
+    targetCt: Number(ctCalculatorState.targetCt) || 0,
+    stepCt,
+    stations: stations.map((s, i) => ({
+      stationNo: Number(String(s.id).replace(/\D/g, "")) || i + 1,
+      name: s.note || s.id,
+      automation: s.automation ? "A" : "M",
+      stepNos: s.steps || [],
+    })),
+  };
+  try {
+    const { plan } = await inputFilesApi.recomputeStations(payload);
+    // Write authoritative station times back into the active plan.
+    (plan.stations || []).forEach((src) => {
+      const target = stations.find((st) => Number(String(st.id).replace(/\D/g, "")) === src.stationNo);
+      if (target) {
+        target.time = src.st;
+        target.state = src.overTarget ? "over" : src.st === 0 ? "light" : "ok";
+      }
+    });
+    renderStage("station");
+    showToast(`Draft saved · ${plan.name || "Plan"} LBR ${plan.lbr}% · bottleneck ${plan.bottleneckSt}s`);
+  } catch (error) {
+    // Fall back to the (formula-identical) local recompute if the balancer is unreachable.
+    getActiveStations().forEach(updateStationTiming);
+    const summary = getStationPlanSummary(activeStationPlanId);
+    renderStage("station");
+    showToast(`Draft saved (local) · Line Balance ${summary.lbe.toFixed(1)}%`);
+    console.warn(error);
+  }
 }
 
 // Page 05 station plan: tracks the CT/HC snapshot the current plan was generated from,

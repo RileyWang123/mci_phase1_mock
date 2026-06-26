@@ -82,6 +82,19 @@
       return response.json();
     }
 
+    async function recomputeStations({ targetCt, stepCt, stations }) {
+      ensureFetch();
+      const response = await fetcher(`${stationBalancerUrl}/recompute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetCt, stepCt, stations }),
+      });
+      if (!response.ok) {
+        throw new Error(`Station recompute failed with ${response.status}`);
+      }
+      return response.json();
+    }
+
     async function getLatestBatch() {
       ensureFetch();
       const response = await fetcher(`${apiBaseUrl}/api/input-files/latest-batch`);
@@ -123,6 +136,7 @@
       getBatchStatus,
       getLatestBatch,
       generateStations,
+      recomputeStations,
     };
   }
 

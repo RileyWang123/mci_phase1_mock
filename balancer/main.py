@@ -126,9 +126,33 @@ def _enrich_plan(plan: dict, step_ct: dict, target_ct: float) -> dict:
     }
 
 
+class RecomputeStation(BaseModel):
+    stationNo: int = 0
+    name: str = ""
+    automation: str = "M"
+    stepNos: list[str] = []
+
+
+class RecomputeRequest(BaseModel):
+    targetCt: float
+    stepCt: dict[str, float]  # stepNo -> CT(secs)
+    stations: list[RecomputeStation]
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": GEMINI_MODEL}
+
+
+@app.post("/recompute")
+async def recompute(req: RecomputeRequest):
+    # Pure recomputation (no AI) for manual station edits. Same metrics as /generate so the
+    # backend stays the single source of truth for ST / bottleneck / LBR.
+    if req.targetCt <= 0:
+        raise HTTPException(status_code=400, detail="a positive targetCt is required")
+    plan = {"name": "Edited Plan", "strategy": "Manually adjusted", "stations": [s.model_dump() for s in req.stations]}
+    enriched = _enrich_plan(plan, req.stepCt, req.targetCt)
+    return {"plan": enriched}
 
 
 @app.post("/generate")
