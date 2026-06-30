@@ -351,6 +351,25 @@
       return parseState.status === "completed";
     }
 
+    function applyDemoIntakeSnapshot() {
+      parseState.status = "completed";
+      parseState.message = "6 videos parsed · static demo snapshot";
+      queueState.batchId = "demo-batch";
+      queueState.uploadedAt = new Date().toISOString();
+      queueState.files = [
+        { id: "demo-v1", original_name: "01-left-antenna-top.webm", source: "Assembly Video", size_bytes: 1480000 },
+        { id: "demo-v2", original_name: "02-left-antenna-routing.webm", source: "Assembly Video", size_bytes: 1320000 },
+        { id: "demo-v3", original_name: "03-middle-board.webm", source: "Assembly Video", size_bytes: 1560000 },
+        { id: "demo-v4", original_name: "04-middle-board-screw.webm", source: "Assembly Video", size_bytes: 1410000 },
+        { id: "demo-v5", original_name: "05-camera-brk.webm", source: "Assembly Video", size_bytes: 1290000 },
+        { id: "demo-v6", original_name: "06-camera-to-cover.webm", source: "Assembly Video", size_bytes: 1620000 },
+      ];
+      queueState.selectedIds = new Set(queueState.files.map((file) => file.id));
+      inputUploadState.setUploaded("Historical MI", { original_name: "XPS-14-MI-RevB03.pptx" });
+      inputUploadState.setUploaded("Assembly Video", { original_name: "6 assembly videos (demo)" });
+      inputUploadState.setUploaded("MTM Database", { original_name: "mtm-standard-times.json" });
+    }
+
     function bind(root) {
       root?.querySelectorAll("[data-upload-source]").forEach((input) => {
         input.addEventListener("change", () => uploadFile(input));
@@ -383,6 +402,7 @@
       parseQueueSet,
       loadQueue,
       hasCompletedParse,
+      applyDemoIntakeSnapshot,
     };
   }
 

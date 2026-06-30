@@ -859,6 +859,13 @@ const uploadSourceNames = ["Historical MI", "Assembly Video", "MTM Database"];
 // Station plans are populated by the AI line-balancing result (Page 05). No hardcoded mock.
 const stationDraft = [];
 const stationPlanB = [];
+const stationPlanC = [];
+const STATION_PLAN_IDS = ["planA", "planB", "planC"];
+const stationPlanStores = {
+  planA: stationDraft,
+  planB: stationPlanB,
+  planC: stationPlanC,
+};
 // stepNo -> CT(secs), built from the AI input so manual cross-station edits recompute station time.
 const stationStepCt = new Map();
 
@@ -904,6 +911,7 @@ function initializeStationRuntime(station) {
 
 stationDraft.forEach(initializeStationRuntime);
 stationPlanB.forEach(initializeStationRuntime);
+stationPlanC.forEach(initializeStationRuntime);
 
 const stationPlanMeta = {
   planA: {
@@ -916,7 +924,28 @@ const stationPlanMeta = {
     label: "Plan B",
     description: "AI station balancing plan.",
   },
+  planC: {
+    name: "Plan C",
+    label: "Plan C",
+    description: "AI station balancing plan.",
+  },
 };
+
+function getStationPlanStore(planId) {
+  return stationPlanStores[planId] || stationDraft;
+}
+
+function hasStationPlans() {
+  return STATION_PLAN_IDS.some((planId) => getStationPlanStore(planId).length > 0);
+}
+
+function clearAllStationPlans() {
+  STATION_PLAN_IDS.forEach((planId) => getStationPlanStore(planId).splice(0, getStationPlanStore(planId).length));
+  STATION_PLAN_IDS.forEach((planId) => {
+    stationPlanMeta[planId].label = stationPlanMeta[planId].name;
+    stationPlanMeta[planId].description = "AI station balancing plan.";
+  });
+}
 
 const videoSopWorkflows = [
   {
@@ -1028,6 +1057,7 @@ function normalizeParsedWorkflow(workflow, index = 0) {
           actualPt: Number(microStep[4]) || [6, 7.5, 5.5, 8, 6.5, 7, 5.5][microIndex % 7],
           automation: microStep[7] === "A" ? "A" : "M",
           evidence: microStep[5] || "",
+          valueType: microStep[9] === "VA" || microStep[9] === "NVA" ? microStep[9] : "",
         };
       }
       return {
@@ -1037,6 +1067,7 @@ function normalizeParsedWorkflow(workflow, index = 0) {
         actualPt: Number(microStep.actualPt ?? microStep.theoreticalPt ?? microStep.pt) || [6, 7.5, 5.5, 8, 6.5, 7, 5.5][microIndex % 7],
         automation: microStep.automation === "A" ? "A" : "M",
         evidence: microStep.evidence || "",
+        valueType: microStep.valueType === "VA" || microStep.valueType === "NVA" ? microStep.valueType : "",
       };
     }),
   };
@@ -1108,14 +1139,14 @@ function applyVideoInputDemoData(workflows = videoSopWorkflows, sourceFile = nul
         "",
         microStep.automation,
         microStep.partName,
+        microStep.valueType || "",
       ]),
     })),
   );
 
   // Stations are NOT derived here. They are produced by AI line balancing on Page 05
-  // (Page 04 → Continue → /generate) and mapped into stationDraft / stationPlanB there.
-  stationDraft.splice(0, stationDraft.length);
-  stationPlanB.splice(0, stationPlanB.length);
+  // (Page 04 → Continue → /generate) and mapped into plan A/B/C stores there.
+  clearAllStationPlans();
 }
 
 function applyParsedSopData(parsedResult) {
@@ -1130,6 +1161,8 @@ function applyParsedSopData(parsedResult) {
   selectedStationId = stationDraft[0]?.id || "";
   activeStationPlanId = "planA";
   stationViewMode = "plan";
+  mtmTimeState.status = "idle";
+  mtmTimeState.message = "";
   draftSavedByStage.parse = false;
   draftSavedByStage.steps = false;
   draftSavedByStage.time = false;
@@ -1143,7 +1176,18 @@ function clearGeneratedWorkflowData() {
   sopMacroSteps.splice(0, sopMacroSteps.length);
 }
 
-clearGeneratedWorkflowData();
+// Static demo for GitHub Pages only — local docker / localhost stays on the real backend path.
+function isStaticDemoMode() {
+  if (typeof window === "undefined" || !window.location) return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("demo") === "0") return false;
+  if (params.get("demo") === "1") return true;
+  return (window.location.hostname || "").endsWith(".github.io");
+}
+
+if (!isStaticDemoMode()) {
+  clearGeneratedWorkflowData();
+}
 
 const mappingRows = [
   {
@@ -1386,7 +1430,7 @@ let selectedMacroStepId = "010";
 let selectedPartArea = "";
 let selectedStationId = "ST01";
 let activeStationPlanId = "planA";
-let stationPlanLocked = false; // false = compare both plans; true = show selected, fold the other
+let stationPlanLocked = false; // false = compare all plans; true = show selected, fold the others
 let stationViewMode = "plan";
 let selectedMappingId = "";
 let currentStageKey = "inputs";
@@ -1416,6 +1460,10 @@ const draftSavedByStage = {
   time: false,
   station: false,
   mapping: false,
+};
+const mtmTimeState = {
+  status: "idle", // idle | generating | ready | failed
+  message: "",
 };
 const apiBaseUrl = window.MCI_API_BASE || "http://localhost:4000";
 const inputFilesApi = globalThis.MciInputFilesApi.createInputFilesApi({ baseUrl: apiBaseUrl });
@@ -1486,6 +1534,7 @@ const workflowTable = globalThis.MciWorkflowTable.createWorkflowTable({
   getMicroPt,
   getActualPt,
   getMicroAutomation,
+  getMicroValueType,
   hasMicroFlag,
   getSelectedStepId: () => selectedStepId,
   setSelectedStepId: (stepId) => {
@@ -1558,6 +1607,9 @@ const stationPage = globalThis.MciStationPage.createStationPage({
   getLineKpiSummary,
   getTargetCt: () => Number(ctCalculatorState.targetCt) || 58,
   getStationMicroSteps,
+  resolveMicroStepByNo,
+  markStationDraftDirty,
+  moveMicroStepBetweenStations,
   getMacroStep,
   getStepById,
   getMicroAutomation,
@@ -1634,6 +1686,20 @@ function formatProcessStepLabel(macro) {
 
 function getMacroStep(id = selectedMacroStepId) {
   return sopMacroSteps.find((step) => step.id === id) || sopMacroSteps[0] || null;
+}
+
+function getMacroByWorkflowNo(workflowNo) {
+  const key = String(workflowNo).padStart(2, "0");
+  return sopMacroSteps.find((step) => formatStepId(step.id) === key) || null;
+}
+
+function resolveMicroStepByNo(stepNo) {
+  const match = String(stepNo || "").trim().match(/^(\d+)\.(\d+)$/);
+  if (!match) return null;
+  const macro = getMacroByWorkflowNo(match[1]);
+  const index = Number(match[2]) - 1;
+  if (!macro || index < 0 || index >= macro.microSteps.length) return null;
+  return { macro, microStep: macro.microSteps[index], index };
 }
 
 function getMicroTotal(macroStep) {
@@ -1727,6 +1793,10 @@ function getMicroAutomation(microStep) {
   return microStep[7] === "A" ? "A" : "M";
 }
 
+function getMicroValueType(microStep) {
+  return microStep[9] === "VA" || microStep[9] === "NVA" ? microStep[9] : "";
+}
+
 function getAutomationMicroRows() {
   return sopMacroSteps.flatMap((macro) =>
     macro.microSteps
@@ -1747,7 +1817,7 @@ function updateStationTiming(station) {
   // Station time = sum of CT of its assigned steps (stepNos), looked up from the AI step map.
   // This makes manual cross-station step moves recompute correctly against the target CT.
   const targetCt = Number(ctCalculatorState.targetCt) || 58;
-  const total = (station.steps || []).reduce((sum, stepNo) => sum + (stationStepCt.get(stepNo) || 0), 0);
+  const total = (station.steps || []).reduce((sum, stepNo) => sum + getStepCt(stepNo), 0);
   station.time = Math.round(total);
   station.state = station.time > targetCt ? "over" : station.time === 0 ? "light" : "ok";
 }
@@ -1841,12 +1911,104 @@ function getMicroReviewState(status) {
   return "Confirm";
 }
 
+function getLockedProcessPt(microStep) {
+  const actual = Number(microStep[4]);
+  if (Number.isFinite(actual) && actual > 0) return actual;
+  const theoretical = Number(microStep[2]);
+  if (Number.isFinite(theoretical) && theoretical > 0) return theoretical;
+  return 0;
+}
+
 function getMicroPt(microStep, microIndex) {
-  return microStep[2] || [3, 2, 1][microIndex % 3];
+  if (currentStageKey === "steps") {
+    if (mtmTimeState.status === "generating") return "";
+    if (mtmTimeState.status !== "ready" && mtmTimeState.status !== "failed" && !getLockedProcessPt(microStep)) return "";
+    const pt = Number(microStep[2]);
+    return Number.isFinite(pt) && pt > 0 ? pt : "";
+  }
+  const pt = Number(microStep[2]);
+  if (Number.isFinite(pt) && pt > 0) return pt;
+  return 0;
 }
 
 function getActualPt(microStep, microIndex) {
-  return microStep[4] || getMicroPt(microStep, microIndex);
+  if (currentStageKey === "steps") {
+    if (mtmTimeState.status === "generating") return "";
+    if (mtmTimeState.status !== "ready" && mtmTimeState.status !== "failed" && !getLockedProcessPt(microStep)) return "";
+    const actual = Number(microStep[4]);
+    if (Number.isFinite(actual) && actual > 0) return actual;
+    const theoretical = Number(microStep[2]);
+    return Number.isFinite(theoretical) && theoretical > 0 ? theoretical : "";
+  }
+  return getLockedProcessPt(microStep);
+}
+
+function clearPendingMtmTimes() {
+  sopMacroSteps.forEach((macro) => {
+    macro.microSteps.forEach((microStep) => {
+      if (getMicroReviewState(microStep[3]) === "Confirm") return;
+      microStep[2] = "";
+      microStep[4] = "";
+      microStep[10] = "";
+    });
+  });
+}
+
+function getStepCt(stepNo) {
+  if (stationStepCt.has(stepNo)) return Number(stationStepCt.get(stepNo)) || 0;
+  const resolved = resolveMicroStepByNo(stepNo);
+  if (!resolved) return 0;
+  return getLockedProcessPt(resolved.microStep);
+}
+
+function markStationDraftDirty() {
+  draftSavedByStage.station = false;
+  updateStageActionButtons("station");
+}
+
+function moveMicroStepBetweenStations(
+  fromStationId,
+  stepNo,
+  toStationId,
+  { insertBeforeStepNo = "", insertAfterStepNo = "" } = {},
+) {
+  const stations = getActiveStations();
+  const from = stations.find((station) => station.id === fromStationId);
+  const to = stations.find((station) => station.id === toStationId);
+  if (!from || !to) return false;
+  const fromIndex = from.steps.indexOf(stepNo);
+  if (fromIndex < 0) return false;
+
+  from.steps.splice(fromIndex, 1);
+
+  let insertIndex = to.steps.length;
+  if (insertAfterStepNo && to.steps.includes(insertAfterStepNo)) {
+    insertIndex = to.steps.indexOf(insertAfterStepNo) + 1;
+  } else if (insertBeforeStepNo && to.steps.includes(insertBeforeStepNo)) {
+    insertIndex = to.steps.indexOf(insertBeforeStepNo);
+  }
+
+  if (from.id === to.id && fromIndex < insertIndex) {
+    insertIndex -= 1;
+  }
+
+  if (to.steps.includes(stepNo)) {
+    from.steps.splice(fromIndex, 0, stepNo);
+    return false;
+  }
+
+  to.steps.splice(insertIndex, 0, stepNo);
+  updateStationTiming(from);
+  updateStationTiming(to);
+  markStationDraftDirty();
+  setSelectedStationId(to.id);
+  renderStage("station");
+  if (from.id === to.id) {
+    showToast(`Moved ${stepNo} within ${to.id}`);
+  } else {
+    showToast(`Moved ${stepNo} from ${from.id} to ${to.id}`);
+  }
+  return true;
 }
 
 function exportStepsToExcel() {
@@ -2087,11 +2249,11 @@ function getStationDraft(id = selectedStationId) {
 }
 
 function getActiveStations() {
-  return activeStationPlanId === "planB" ? stationPlanB : stationDraft;
+  return getStationPlanStore(activeStationPlanId);
 }
 
 function getStationPlanSummary(planId) {
-  const stations = planId === "planB" ? stationPlanB : stationDraft;
+  const stations = getStationPlanStore(planId);
   const targetCt = Number(ctCalculatorState.targetCt) || 58;
   const totalHc = stations.reduce((total, station) => total + Number(station.hc), 0);
   const totalWorkContent = stations.reduce((total, station) => total + Number(station.time), 0);
@@ -2113,7 +2275,7 @@ function getStationPlanSummary(planId) {
 function selectStationPlan(planId) {
   if (!stationPlanMeta[planId]) return;
   activeStationPlanId = planId;
-  stationPlanLocked = true; // selecting a plan folds the other into an alternative bar
+  stationPlanLocked = true; // selecting a plan folds the others into alternative bars
   const stations = getActiveStations();
   selectedStationId = stations.some((station) => station.id === selectedStationId) ? selectedStationId : stations[0]?.id || "";
   renderStage("station");
@@ -2222,7 +2384,7 @@ function renderStationWorkflowDetails(station) {
 
 // Compact card for compare mode — KPIs + strategy + pick button (no full station detail).
 // Full view reusing the legacy station look: Line Balance Efficiency + CT bar chart + station list.
-const STATION_EMPTY_PROMPT = `<div class="ai-station-loading">No station plan yet. Go to Page 04 (CT Calculation), set a target CT, then click "Continue to Station Balancing Workspace" to generate Plan A / Plan B.</div>`;
+const STATION_EMPTY_PROMPT = `<div class="ai-station-loading">No station plan yet. Go to Page 04 (CT Calculation), set a target CT, then click "Continue to Station Balancing Workspace" to generate Plan A / B / C.</div>`;
 
 function stationCanvasGate() {
   // Returns HTML to show INSTEAD of the legacy station view, or null to use the legacy view.
@@ -2232,7 +2394,7 @@ function stationCanvasGate() {
   if (stationPlanState.status === "failed") {
     return `<div class="ai-station-failed">Station generation failed: ${escapeHtml(stationPlanState.message || "")}</div>`;
   }
-  if (!stationDraft.length && !stationPlanB.length) return STATION_EMPTY_PROMPT;
+  if (!hasStationPlans()) return STATION_EMPTY_PROMPT;
   return null;
 }
 
@@ -2258,6 +2420,7 @@ function renderMappingCanvas() {
 }
 
 async function refreshInputUploadStatus() {
+  if (isStaticDemoMode()) return;
   await inputPage.refreshUploadStatus();
 }
 
@@ -2313,7 +2476,7 @@ function renderTableHeader() {
       : currentStageKey === "human"
       ? ["Item", "Human Input", "Purpose", "Status", "Required Before CT"]
       : currentStageKey === "steps"
-        ? ["SOP Workflow", "Step", "Automation", "Step Description", "Part", "Theoretical PT (secs)", "Actual PT (secs)", "Actions"]
+        ? ["SOP Workflow", "Step", "Automation", "Step Description", "Part", "VA / NVA", "Theoretical PT (secs)", "Actual PT (secs)", "Actions"]
         : currentStageKey === "time"
           ? ["Process Step", "Step", "Automation", "Step Description", "Theoretical PT (secs)", "Actual PT (secs)"]
         : currentStageKey === "station"
@@ -2321,7 +2484,7 @@ function renderTableHeader() {
         : currentStageKey === "mapping"
           ? ["Station", "Automation", "Width (m)", "Depth (m)", "Operator Side", "Assigned Steps", "Quality Risk"]
           : currentStageKey === "parse"
-            ? ["SOP Workflow", "Step", "Automation", "Step Description", "Part", "Actions"]
+            ? ["SOP Workflow", "Step", "Automation", "Step Description", "Part", "VA / NVA", "Actions"]
           : ["Step", "Process", "Station", "CT", "MTM", "Steps", "Process Time", "Tooling", "Material", "Risk", "Status"];
   refs.tableHead.innerHTML = headers.map((header) => `<th>${header}</th>`).join("");
 }
@@ -2374,14 +2537,24 @@ function renderEditorToolbar() {
     refs.editorContext.innerHTML = `<div><h2>Required Inputs Before CT</h2><p>Complete these five inputs before CT calculation and station generation.</p></div>`;
   } else if (currentStageKey === "steps") {
     refs.editorContext.innerHTML = `
-      <div><h2>Generated Step List</h2><p>Review and edit process time here. Theoretical PT is the AI / MTM baseline; Actual PT is the final time used for CT calculation.</p></div>
-      <div class="step-toolbar-actions">
+      <div><h2>Generated Step List</h2><p>${escapeHtml(mtmTimeState.message || "Theoretical PT is the MTM baseline; Actual PT is the final time used for CT calculation.")}</p></div>
+      ${
+        mtmTimeState.status === "generating"
+          ? `<div class="station-plan-status generating"><span><span class="station-spinner"></span> MTM matching in progress… (often 1–3 min per workflow; large SOPs may take longer)</span></div>`
+          : mtmTimeState.status === "idle"
+            ? `<div class="station-plan-status stale"><span>MTM times not calculated yet. Go to Page 02, Save Draft, then Continue.</span></div>`
+          : mtmTimeState.status === "failed"
+            ? `<div class="station-plan-status stale"><span>${escapeHtml(mtmTimeState.message || "MTM calculation failed")}</span><div class="step-toolbar-actions"><button class="generate-station-btn" type="button" data-action="recalculate-mtm">Retry MTM</button></div></div>`
+            : `<div class="step-toolbar-actions">
         <button class="micro-add-step" type="button" data-action="add-micro-step">+ Add Step</button>
         <button class="micro-export-step" type="button" data-action="export-steps-excel">⤓ Export Excel</button>
-      </div>
+        ${mtmTimeState.status === "ready" ? `<button class="generate-station-btn" type="button" data-action="recalculate-mtm">Recalculate MTM</button>` : ""}
+      </div>`
+      }
     `;
     refs.editorContext.querySelector?.("[data-action='add-micro-step']")?.addEventListener("click", addMicroStep);
     refs.editorContext.querySelector?.("[data-action='export-steps-excel']")?.addEventListener("click", exportStepsToExcel);
+    refs.editorContext.querySelector?.("[data-action='recalculate-mtm']")?.addEventListener("click", calculateMtmTimes);
   } else if (currentStageKey === "time") {
     refs.editorContext.innerHTML = `<div><h2>CT Calculation</h2><p>Target CT uses all confirmed step actual PT from Process Time as the total process-time basis.</p></div>`;
   } else if (currentStageKey === "station") {
@@ -2396,7 +2569,7 @@ function renderEditorToolbar() {
         <div class="station-plan-status ${tone}">
           <span>${status === "generating" ? `<span class="station-spinner"></span> Generating station plan…` : stale ? "CT changed on Page 04 — plan is out of date" : "Plan based on CT " + stationPlanState.ctSnapshot + "s / HC " + stationPlanState.hcSnapshot}</span>
           <div class="step-toolbar-actions">
-            ${status === "ready" && (stationDraft.length || stationPlanB.length) ? `<button class="micro-export-step" type="button" data-action="export-station-excel">⤓ Export Excel</button>` : ""}
+            ${status === "ready" && hasStationPlans() ? `<button class="micro-export-step" type="button" data-action="export-station-excel">⤓ Export Excel</button>` : ""}
             ${status !== "generating" && (stale || status === "ready" || status === "failed") ? `<button class="generate-station-btn" type="button" data-action="regenerate-station-plan">Regenerate Plan</button>` : ""}
           </div>
         </div>
@@ -2600,9 +2773,9 @@ function renderHumanRows() {
 }
 
 function renderStationRows() {
-  // Legacy station table, populated by AI-mapped stationDraft/stationPlanB. Empty until generated.
+  // Legacy station table, populated by AI-mapped station plans. Empty until generated.
   if (!refs.rows) return;
-  if (!stationDraft.length && !stationPlanB.length) {
+  if (!hasStationPlans()) {
     refs.rows.innerHTML = "";
     return;
   }
@@ -2619,7 +2792,10 @@ function renderRows() {
   if (currentStageKey === "inputs") renderInputRows();
   else if (currentStageKey === "parse") renderParseRows();
   else if (currentStageKey === "human") renderHumanRows();
-  else if (currentStageKey === "steps") renderParseRows({ showTiming: true });
+  else if (currentStageKey === "steps") {
+    const showTiming = mtmTimeState.status === "ready" || mtmTimeState.status === "failed";
+    renderParseRows({ showTiming });
+  }
   else if (currentStageKey === "time") renderCtRows();
   else if (currentStageKey === "station") renderStationRows();
   else if (currentStageKey === "mapping") renderLayoutRows();
@@ -2705,11 +2881,11 @@ function renderCtPanel() {
 
 function renderStationPanel() {
   // Empty-state panel until AI generates; otherwise the legacy station panel (driven by AI data).
-  if (!stationDraft.length && !stationPlanB.length) {
+  if (!hasStationPlans()) {
     globalThis.MciAiPanel.renderPanel(refs, {
       title: "Station Balance · Waiting",
       confidence: "0",
-      reason: "No station plan yet. Set a target CT on Page 04 and click Continue to generate Plan A / Plan B.",
+      reason: "No station plan yet. Set a target CT on Page 04 and click Continue to generate Plan A / B / C.",
       missingItems: ["Generate a plan from Page 04 first"],
       evidenceTitle: "Station View",
       evidenceClass: "timing-exposure-list",
@@ -3048,21 +3224,20 @@ function updateStageActionButtons(stageKey = currentStageKey) {
   }
   if (refs.continue) {
     refs.continue.textContent = getContinueLabel(stageKey);
-    refs.continue.disabled = needsSave && !draftSavedByStage[stageKey];
+    refs.continue.disabled = (needsSave && !draftSavedByStage[stageKey])
+      || (stageKey === "steps" && mtmTimeState.status === "generating");
     refs.continue.title = refs.continue.disabled ? "Save draft before continuing" : "";
   }
 }
 
 function saveCurrentDraft() {
   if (!requiresDraftSave()) return;
-  draftSavedByStage[currentStageKey] = true;
-  updateStageActionButtons();
-  // On the station stage, send the (possibly hand-edited) assignment to the backend balancer
-  // for authoritative ST / Line Balance recomputation, then write the result back.
-  if (currentStageKey === "station" && (stationDraft.length || stationPlanB.length)) {
+  if (currentStageKey === "station" && hasStationPlans()) {
     recalculateStationPlanFromBackend();
     return;
   }
+  draftSavedByStage[currentStageKey] = true;
+  updateStageActionButtons();
   showToast(`${stages[currentStageKey].title} draft saved`);
 }
 
@@ -3093,13 +3268,17 @@ async function recalculateStationPlanFromBackend() {
       }
     });
     renderStage("station");
-    showToast(`Draft saved · ${plan.name || "Plan"} LBR ${plan.lbr}% · bottleneck ${plan.bottleneckSt}s`);
+    draftSavedByStage.station = true;
+    updateStageActionButtons("station");
+    showToast(`Draft saved · LBR ${plan.lbr}% · bottleneck ${plan.bottleneckSt}s · target CT ${payload.targetCt}s`);
   } catch (error) {
     // Fall back to the (formula-identical) local recompute if the balancer is unreachable.
     getActiveStations().forEach(updateStationTiming);
     const summary = getStationPlanSummary(activeStationPlanId);
     renderStage("station");
-    showToast(`Draft saved (local) · Line Balance ${summary.lbe.toFixed(1)}%`);
+    draftSavedByStage.station = true;
+    updateStageActionButtons("station");
+    showToast(`Draft saved (local) · Line Balance ${summary.lbe.toFixed(1)}% · target CT ${payload.targetCt}s`);
     console.warn(error);
   }
 }
@@ -3111,9 +3290,87 @@ const stationPlanState = {
   message: "",
   ctSnapshot: null,
   hcSnapshot: null,
-  plans: [], // AI-balanced station plans (Plan A / Plan B) with computed IE metrics
+  plans: [], // AI-balanced station plans (A/B/C) with computed IE metrics
   selectedPlanIndex: null, // null = compare mode; number = locked-in plan
 };
+
+function collectMtmCalculateInput() {
+  const workflows = sopMacroSteps
+    .map((macro) => ({
+      workflowId: macro.id,
+      title: macro.title,
+      steps: macro.microSteps.map((microStep, index) => ({
+        stepNo: `${formatStepId(macro.id)}.${String(index + 1).padStart(2, "0")}`,
+        description: microStep[0],
+        partName: microStep[8] || macro.title,
+        automation: getMicroAutomation(microStep),
+        valueType: getMicroValueType(microStep),
+      })),
+    }))
+    .filter((workflow) => workflow.steps.length);
+  return { workflows };
+}
+
+function applyMtmResultsToMicroSteps(results = []) {
+  for (const row of results) {
+    const resolved = resolveMicroStepByNo(row.stepNo);
+    if (!resolved) continue;
+    const { microStep } = resolved;
+    const theoreticalPt = Number(row.theoreticalPt) || 0;
+    microStep[2] = theoreticalPt;
+    if (getMicroReviewState(microStep[3]) !== "Confirm") {
+      microStep[4] = theoreticalPt;
+    }
+    if (row.needsReview) {
+      microStep[3] = "Edit";
+      markMicroFlag(microStep, "mtm-review");
+    } else {
+      const flags = new Set(getMicroFlags(microStep));
+      flags.delete("mtm-review");
+      microStep[5] = Array.from(flags).join("|");
+    }
+    if (Array.isArray(row.mtmCodes) && row.mtmCodes.length) {
+      microStep[10] = row.mtmCodes.join("+");
+    }
+  }
+}
+
+async function calculateMtmTimes() {
+  if (isStaticDemoMode()) {
+    showToast("Static demo — MTM times are pre-loaded");
+    return;
+  }
+  const input = collectMtmCalculateInput();
+  const totalSteps = input.workflows.reduce((sum, workflow) => sum + workflow.steps.length, 0);
+  if (!totalSteps) {
+    showToast("Parse and review steps before calculating MTM times");
+    return;
+  }
+
+  mtmTimeState.status = "generating";
+  mtmTimeState.message = `MTM matching ${totalSteps} step(s) across ${input.workflows.length} workflow(s)… (about 1–3 min per workflow)`;
+  clearPendingMtmTimes();
+  draftSavedByStage.steps = false;
+  updateStageActionButtons("steps");
+  goToStage("steps");
+
+  try {
+    const result = await inputFilesApi.calculateMtm(input);
+    const rows = Array.isArray(result.results) ? result.results : [];
+    applyMtmResultsToMicroSteps(rows);
+    mtmTimeState.status = "ready";
+    const stats = result.stats || {};
+    mtmTimeState.message = `MTM complete · ${stats.ok || 0}/${stats.total || rows.length} matched · ${stats.needsReview || 0} need review · rules ${stats.rules || 0} / LLM ${stats.llm || 0}`;
+    showToast(mtmTimeState.message);
+  } catch (error) {
+    mtmTimeState.status = "failed";
+    mtmTimeState.message = error.message || "MTM calculation failed";
+    showToast(mtmTimeState.message);
+    console.warn(error);
+  }
+  updateStageActionButtons("steps");
+  if (currentStageKey === "steps") renderStage("steps");
+}
 
 function goToStage(stageKey) {
   $$(".flow-item").forEach((node) => node.classList.toggle("active", node.dataset.stage === stageKey));
@@ -3131,15 +3388,15 @@ function collectStationPlanInput() {
       stepNo: `${formatStepId(macro.id)}.${String(index + 1).padStart(2, "0")}`,
       description: microStep[0],
       automation: getMicroAutomation(microStep),
-      actualPt: getActualPt(microStep, index),
+      actualPt: getLockedProcessPt(microStep),
     })),
   );
   return { targetCt, totalHc, steps };
 }
 
 // Map the AI line-balancing result into the legacy station model so the existing Page 05
-// view (plan cards, LBE bar, editable rows, KPI chart) renders it. Plan A → stationDraft,
-// Plan B → stationPlanB; metadata + station times come straight from the AI/computed values.
+// view (plan cards, LBE bar, editable rows, KPI chart) renders it. Plans A/B/C map to
+// stationDraft / stationPlanB / stationPlanC; metadata + station times come from the backend.
 function mapAiPlansToLegacyStations(input, plans) {
   // Build stepNo -> CT so manual cross-station moves can recompute station time + LBE.
   stationStepCt.clear();
@@ -3163,30 +3420,36 @@ function mapAiPlansToLegacyStations(input, plans) {
     });
   }
 
-  const planAStations = plans[0] ? toLegacyStations(plans[0]) : [];
-  const planBStations = plans[1] ? toLegacyStations(plans[1]) : [];
-  stationDraft.splice(0, stationDraft.length, ...planAStations);
-  stationPlanB.splice(0, stationPlanB.length, ...planBStations);
+  clearAllStationPlans();
 
-  // Plan card labels/descriptions from the AI strategy text.
-  if (plans[0]) {
-    stationPlanMeta.planA.label = "Plan A";
-    stationPlanMeta.planA.description = plans[0].strategy || "AI station balancing plan.";
-  }
-  if (plans[1]) {
-    stationPlanMeta.planB.label = "Plan B";
-    stationPlanMeta.planB.description = plans[1].strategy || "AI station balancing plan.";
-  }
+  plans.slice(0, STATION_PLAN_IDS.length).forEach((plan, index) => {
+    const planId = STATION_PLAN_IDS[index];
+    const stations = toLegacyStations(plan);
+    getStationPlanStore(planId).splice(0, 0, ...stations);
+    stationPlanMeta[planId].label = plan.name || stationPlanMeta[planId].name;
+    stationPlanMeta[planId].description = plan.strategy || "AI station balancing plan.";
+  });
 
   activeStationPlanId = "planA";
-  stationPlanLocked = false; // start in compare mode (both plans shown)
-  selectedStationId = stationDraft[0]?.id || "";
+  stationPlanLocked = false; // start in compare mode (all plans shown)
+  selectedStationId = getStationPlanStore("planA")[0]?.id || "";
+  getActiveStations().forEach(updateStationTiming);
+  markStationDraftDirty();
 }
 
 async function generateStationPlan() {
+  if (isStaticDemoMode()) {
+    showToast("Static demo — station plans are pre-loaded");
+    return;
+  }
   const input = collectStationPlanInput();
   if (!input.steps.length) {
     showToast("Parse and review steps before generating a station plan");
+    return;
+  }
+  const stepsWithPt = input.steps.filter((step) => Number(step.actualPt) > 0);
+  if (!stepsWithPt.length) {
+    showToast("Complete Page 03 process time before station balancing");
     return;
   }
   if (!input.targetCt) {
@@ -3228,12 +3491,27 @@ function continueToNextStage() {
     showToast("Save draft before continuing");
     return;
   }
-  if (currentStageKey === "inputs" && !inputPage.hasCompletedParse()) {
+  if (currentStageKey === "inputs" && !isStaticDemoMode() && !inputPage.hasCompletedParse()) {
     showToast("Parse uploaded inputs before continuing");
+    return;
+  }
+  // From Process Steps (Page 02), Continue runs MTM matching into Page 03.
+  if (currentStageKey === "parse") {
+    if (isStaticDemoMode()) {
+      goToStage("steps");
+      updateStageActionButtons("steps");
+      return;
+    }
+    calculateMtmTimes();
     return;
   }
   // From CT Calculation, "Continue" triggers AI station balancing (with loading) into Page 05.
   if (currentStageKey === "time") {
+    if (isStaticDemoMode()) {
+      goToStage("station");
+      updateStageActionButtons("station");
+      return;
+    }
     generateStationPlan();
     return;
   }
@@ -3358,6 +3636,175 @@ function bindEvents() {
 
   refs.saveDraft?.addEventListener("click", saveCurrentDraft);
   refs.continue?.addEventListener("click", continueToNextStage);
+}
+
+function collectMacroStepNos(macro) {
+  return (macro?.microSteps || []).map(
+    (_microStep, index) => `${formatStepId(macro.id)}.${String(index + 1).padStart(2, "0")}`,
+  );
+}
+
+function demoStationNote(stepNos, fallback) {
+  const resolved = stepNos.length ? resolveMicroStepByNo(stepNos[0]) : null;
+  if (resolved?.macro?.title) return resolved.macro.title;
+  return fallback;
+}
+
+function buildDemoStationRows(stepGroups, fallbackNote) {
+  const targetCt = Number(ctCalculatorState.targetCt) || 58;
+  return stepGroups.map((stepNos, index) => {
+    const total = stepNos.reduce((sum, stepNo) => sum + (stationStepCt.get(stepNo) || 0), 0);
+    return {
+      id: `ST${String(index + 1).padStart(2, "0")}`,
+      time: Math.round(total),
+      hc: "1.0",
+      state: total > targetCt ? "over" : total === 0 ? "light" : "ok",
+      steps: stepNos,
+      note: demoStationNote(stepNos, `${fallbackNote} ${index + 1}`),
+      issue: "Demo snapshot · review before release",
+    };
+  });
+}
+
+function applyDemoMtmSnapshot() {
+  const demoMtmCodes = ["R30B+G1A", "M32E+PTSEC", "R30B+G1A", "M32E+G1A", "PTSEC", "R30B+M32E"];
+  sopMacroSteps.forEach((macro, macroIndex) => {
+    macro.status = "Extracted";
+    macro.tone = macroIndex === 1 ? "review" : "review";
+    macro.microSteps.forEach((microStep, index) => {
+      const theoretical = [6, 7, 5, 8, 6, 7, 5][index % 7];
+      const actual = [6, 7.5, 5.5, 8, 6.5, 7, 5.5][index % 7];
+      microStep[2] = theoretical;
+      microStep[4] = actual;
+      microStep[3] = macroIndex === 0 && index === 0 ? "Edit" : "Confirm";
+      microStep[7] = index === 4 && macroIndex === 4 ? "A" : "M";
+      microStep[9] = index % 3 === 0 ? "NVA" : "VA";
+      microStep[10] = demoMtmCodes[index % demoMtmCodes.length];
+    });
+  });
+}
+
+function buildDemoPlanSummaries() {
+  return STATION_PLAN_IDS.map((planId) => {
+    const summary = getStationPlanSummary(planId);
+    const bottleneck = summary.stations.reduce((max, station) => Math.max(max, Number(station.time) || 0), 0);
+    return {
+      name: summary.name,
+      strategy: summary.description,
+      lbr: Number(summary.lbe.toFixed(1)),
+      bottleneckSt: bottleneck,
+      stations: summary.stations.map((station, index) => ({
+        stationNo: Number(String(station.id).replace(/\D/g, "")) || index + 1,
+        name: station.note,
+        automation: station.automation ? "A" : "M",
+        stepNos: [...station.steps],
+        st: Number(station.time) || 0,
+        overTarget: Number(station.time) > summary.targetCt,
+      })),
+    };
+  });
+}
+
+function applyStaticDemoSnapshot() {
+  applyVideoInputDemoData();
+  applyDemoMtmSnapshot();
+
+  stationStepCt.clear();
+  sopMacroSteps.forEach((macro) => {
+    collectMacroStepNos(macro).forEach((stepNo, index) => {
+      const microStep = macro.microSteps[index];
+      stationStepCt.set(stepNo, Number(microStep?.[4]) || Number(microStep?.[2]) || 0);
+    });
+  });
+
+  const macroStepGroups = sopMacroSteps.map((macro) => collectMacroStepNos(macro));
+  const planA = buildDemoStationRows(macroStepGroups, "Workflow station");
+  const planB = buildDemoStationRows(
+    [
+      [...macroStepGroups[0], ...macroStepGroups[1]],
+      [...macroStepGroups[2], ...macroStepGroups[3]],
+      [...macroStepGroups[4], ...macroStepGroups[5]],
+    ].filter((group) => group.length),
+    "Balanced group",
+  );
+  const planC = buildDemoStationRows(
+    [
+      [...macroStepGroups[0], ...macroStepGroups[1], ...macroStepGroups[2]],
+      [...macroStepGroups[3], ...macroStepGroups[4], ...macroStepGroups[5]],
+    ].filter((group) => group.length),
+    "Minimum stations",
+  );
+
+  clearAllStationPlans();
+  stationPlanMeta.planA.label = "Strict sequence";
+  stationPlanMeta.planA.description = "Follows Page 03 micro-step order · one workflow per station.";
+  stationPlanMeta.planB.label = "Higher line balance";
+  stationPlanMeta.planB.description = "Merged adjacent workflows to smooth station load.";
+  stationPlanMeta.planC.label = "Minimum headcount";
+  stationPlanMeta.planC.description = "Fewest stations while keeping precedence from the demo SOP.";
+
+  [
+    ["planA", planA],
+    ["planB", planB],
+    ["planC", planC],
+  ].forEach(([planId, stations]) => {
+    const store = getStationPlanStore(planId);
+    store.splice(0, 0, ...stations);
+    store.forEach(initializeStationRuntime);
+    store.forEach(updateStationTiming);
+  });
+
+  inputSources.forEach((source) => {
+    if (source.source === "Historical MI") {
+      source.quality = "Ready";
+      source.tone = "done";
+      source.parsed = "Work instructions, images, CTQ notes";
+      source.issue = "Demo snapshot loaded";
+    } else if (source.source === "Assembly Video") {
+      source.quality = "Ready";
+      source.tone = "done";
+      source.parsed = "6 videos, 35 generated steps";
+      source.issue = "Parsed in demo snapshot";
+    } else if (source.source === "MTM Database") {
+      source.quality = "Ready";
+      source.tone = "done";
+      source.parsed = "8,214 codes · 35 matched in demo";
+      source.issue = "";
+    }
+  });
+
+  inputPage.applyDemoIntakeSnapshot?.();
+
+  selectedStepId = steps[0]?.id || "";
+  selectedMacroStepId = sopMacroSteps[0]?.id || "";
+  selectedStationId = stationDraft[0]?.id || "";
+  activeStationPlanId = "planA";
+  stationViewMode = "plan";
+  stationPlanLocked = false;
+
+  const totalSteps = sopMacroSteps.reduce((sum, macro) => sum + macro.microSteps.length, 0);
+  mtmTimeState.status = "ready";
+  mtmTimeState.message = `Demo snapshot · ${totalSteps}/${totalSteps} MTM matched · 1 needs review`;
+  stationPlanState.status = "ready";
+  stationPlanState.ctSnapshot = Number(ctCalculatorState.targetCt) || 58;
+  stationPlanState.hcSnapshot = Number(ctCalculatorState.totalHc) || 7;
+  stationPlanState.message = "Demo snapshot · Plan A / B / C pre-generated";
+  stationPlanState.plans = buildDemoPlanSummaries();
+  stationPlanState.selectedPlanIndex = null;
+
+  draftSavedByStage.parse = true;
+  draftSavedByStage.steps = true;
+  draftSavedByStage.time = true;
+  draftSavedByStage.station = true;
+  draftSavedByStage.mapping = true;
+  draftSavedByStage.output = true;
+
+  document.body.classList.add("static-demo");
+  updateStageActionButtons("inputs");
+}
+
+if (isStaticDemoMode()) {
+  applyStaticDemoSnapshot();
 }
 
 bindEvents();
