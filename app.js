@@ -1039,6 +1039,13 @@ const videoSopWorkflows = [
   },
 ];
 
+function inferMicroValueType(description = "") {
+  const text = String(description);
+  if (/撕|拿|取|放入|推入|推|理順|穿|移除|解開|打開|準備|確認/i.test(text)) return "NVA";
+  if (/鎖|壓合|貼|黏合|組裝|嵌入|卡入|固定|壓實|鎖緊|定型|按壓/i.test(text)) return "VA";
+  return "NVA";
+}
+
 function normalizeParsedWorkflow(workflow, index = 0) {
   return {
     id: String(workflow.id || (index + 1) * 10).padStart(3, "0"),
@@ -1057,17 +1064,19 @@ function normalizeParsedWorkflow(workflow, index = 0) {
           actualPt: Number(microStep[4]) || [6, 7.5, 5.5, 8, 6.5, 7, 5.5][microIndex % 7],
           automation: microStep[7] === "A" ? "A" : "M",
           evidence: microStep[5] || "",
-          valueType: microStep[9] === "VA" || microStep[9] === "NVA" ? microStep[9] : "",
+          valueType: microStep[9] === "VA" || microStep[9] === "NVA" ? microStep[9] : inferMicroValueType(microStep[0]),
         };
       }
+      const description = microStep.description || microStep.stepDescription || `Extracted action ${microIndex + 1}`;
+      const rawType = microStep.valueType === "VA" || microStep.valueType === "NVA" ? microStep.valueType : "";
       return {
-        description: microStep.description || microStep.stepDescription || `Extracted action ${microIndex + 1}`,
+        description,
         partName: microStep.partName || microStep.part || microStep.material || "TBD",
         theoreticalPt: Number(microStep.theoreticalPt ?? microStep.pt) || [6, 7, 5, 8, 6, 7, 5][microIndex % 7],
         actualPt: Number(microStep.actualPt ?? microStep.theoreticalPt ?? microStep.pt) || [6, 7.5, 5.5, 8, 6.5, 7, 5.5][microIndex % 7],
         automation: microStep.automation === "A" ? "A" : "M",
         evidence: microStep.evidence || "",
-        valueType: microStep.valueType === "VA" || microStep.valueType === "NVA" ? microStep.valueType : "",
+        valueType: rawType || inferMicroValueType(description),
       };
     }),
   };
@@ -1795,6 +1804,13 @@ function getMicroAutomation(microStep) {
 
 function getMicroValueType(microStep) {
   return microStep[9] === "VA" || microStep[9] === "NVA" ? microStep[9] : "";
+}
+
+function renderMicroValueTypeChip(microStep) {
+  const vt = getMicroValueType(microStep);
+  return vt
+    ? `<span class="va-chip ${vt === "VA" ? "va" : "nva"}">${vt}</span>`
+    : `<span class="va-chip none">—</span>`;
 }
 
 function getAutomationMicroRows() {
@@ -2669,6 +2685,7 @@ function renderMicroRows() {
         const pt = getMicroPt(microStep, index);
         const actualPt = getActualPt(microStep, index);
         const automation = getMicroAutomation(microStep);
+        const partName = microStep[8] || "TBD";
         const groupClass = macroIndex % 2 === 0 ? "micro-group-green" : "micro-group-blue";
         const movedClass = hasMicroFlag(microStep, "moved") ? "micro-moved" : "";
         return `
@@ -2682,6 +2699,8 @@ function renderMicroRows() {
             </select>
           </td>
           <td><input class="micro-edit-field micro-action-field" data-macro-id="${macro.id}" data-micro-index="${index}" data-micro-field="0" value="${escapeHtml(label)}" /></td>
+          <td><input class="micro-edit-field micro-part-field" data-macro-id="${macro.id}" data-micro-index="${index}" data-micro-field="8" value="${escapeHtml(partName)}" /></td>
+          <td>${renderMicroValueTypeChip(microStep)}</td>
           <td><input class="micro-edit-field micro-time-field" type="number" min="0" step="0.5" data-macro-id="${macro.id}" data-micro-index="${index}" data-micro-field="2" value="${pt}" /></td>
           <td><input class="micro-edit-field micro-time-field" type="number" min="0" step="0.5" data-macro-id="${macro.id}" data-micro-index="${index}" data-micro-field="4" value="${actualPt}" /></td>
           <td class="micro-actions-cell"><button class="micro-confirm-step" type="button" data-action="confirm-micro-step" data-macro-id="${macro.id}" data-micro-index="${index}">Confirm</button><button class="micro-delete-step" type="button" data-action="delete-micro-step" data-macro-id="${macro.id}" data-micro-index="${index}">Delete</button></td>
@@ -2690,7 +2709,7 @@ function renderMicroRows() {
       },
     )
     .join("")
-    : `<tr><td class="micro-empty-row" colspan="7">No steps match the current filter.</td></tr>`;
+    : `<tr><td class="micro-empty-row" colspan="9">No steps match the current filter.</td></tr>`;
 
   refs.rows.querySelectorAll("[data-action='delete-micro-step']").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -3678,7 +3697,7 @@ function applyDemoMtmSnapshot() {
       microStep[4] = actual;
       microStep[3] = macroIndex === 0 && index === 0 ? "Edit" : "Confirm";
       microStep[7] = index === 4 && macroIndex === 4 ? "A" : "M";
-      microStep[9] = index % 3 === 0 ? "NVA" : "VA";
+      microStep[9] = inferMicroValueType(microStep[0]);
       microStep[10] = demoMtmCodes[index % demoMtmCodes.length];
     });
   });

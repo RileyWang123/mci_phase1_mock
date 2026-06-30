@@ -8,6 +8,7 @@
     getMicroPt,
     getActualPt,
     getMicroAutomation,
+    getMicroValueType,
     hasMicroFlag,
     getSelectedStepId,
     setSelectedStepId,
@@ -33,7 +34,7 @@
     function renderRowsHtml({ showTiming }) {
       const selectedStepId = getSelectedStepId();
       if (!steps.length) {
-        return `<tr><td class="micro-empty-row" colspan="${showTiming ? 8 : 6}">No parsed SOP workflows yet. Run Parse Uploaded Inputs on Page 01.</td></tr>`;
+        return `<tr><td class="micro-empty-row" colspan="${showTiming ? 9 : 7}">No parsed SOP workflows yet. Run Parse Uploaded Inputs on Page 01.</td></tr>`;
       }
       return steps
         .map((step, macroIndex) => {
@@ -70,6 +71,7 @@
               </td>
               <td><textarea class="micro-edit-field micro-action-field workflow-step-description" rows="2" data-macro-id="${step.id}" data-micro-index="${index}" data-micro-field="0">${escapeHtml(microStep[0])}</textarea></td>
               <td><input class="workflow-edit-field workflow-part-field" data-step-id="${step.id}" data-field="material" value="${escapeHtml(step.material || "TBD")}" /></td>
+              <td>${(() => { const vt = getMicroValueType?.(microStep) || ""; return vt ? `<span class="va-chip ${vt === "VA" ? "va" : "nva"}">${vt}</span>` : `<span class="va-chip none">—</span>`; })()}</td>
               ${
                 showTiming
                   ? `<td><input class="micro-edit-field micro-time-field" type="number" min="0" step="0.5" data-macro-id="${step.id}" data-micro-index="${index}" data-micro-field="2" value="${pt}" /></td>
